@@ -34,6 +34,7 @@ pub(crate) mod body;
 pub(crate) mod cfg;
 pub(crate) mod cfg_old;
 pub(crate) mod codegen_attrs;
+pub(crate) mod compartments;
 pub(crate) mod confusables;
 pub(crate) mod crate_level;
 pub(crate) mod debugger;

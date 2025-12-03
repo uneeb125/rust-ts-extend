@@ -226,6 +226,7 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                     | AttributeKind::ConstStabilityIndirect
                     | AttributeKind::MacroTransparency(_)
                     | AttributeKind::Pointee(..)
+                    | AttributeKind::Compartments(..)
                     | AttributeKind::Dummy
                     | AttributeKind::RustcBuiltinMacro { .. }
                     | AttributeKind::Ignore { .. }

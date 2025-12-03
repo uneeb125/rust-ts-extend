@@ -503,7 +503,7 @@ pub struct InferArg {
 
 impl InferArg {
     pub fn to_ty(&self) -> Ty<'static> {
-        Ty { kind: TyKind::Infer(()), span: self.span, hir_id: self.hir_id }
+        Ty { kind: TyKind::Infer(()), span: self.span, hir_id: self.hir_id, compartments: &[] }
     }
 }
 
@@ -3377,6 +3377,7 @@ pub struct Ty<'hir, Unambig = ()> {
     pub hir_id: HirId,
     pub span: Span,
     pub kind: TyKind<'hir, Unambig>,
+    pub compartments: &'hir [Symbol],
 }
 
 impl<'hir> Ty<'hir, AmbigArg> {
@@ -5025,7 +5026,7 @@ mod size_asserts {
     static_assert_size!(TraitImplHeader<'_>, 48);
     static_assert_size!(TraitItem<'_>, 88);
     static_assert_size!(TraitItemKind<'_>, 48);
-    static_assert_size!(Ty<'_>, 48);
+    static_assert_size!(Ty<'_>, 64);
     static_assert_size!(TyKind<'_>, 32);
     // tidy-alphabetical-end
 }

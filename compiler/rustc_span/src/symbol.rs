@@ -691,6 +691,7 @@ symbols! {
         compare_bytes,
         compare_exchange,
         compare_exchange_weak,
+        compartments,
         compile_error,
         compiler,
         compiler_builtins,

@@ -709,6 +709,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     hir_id: self.next_id(),
                     kind: hir::TyKind::Path(resume_ty),
                     span: unstable_span,
+                    compartments: self.arena.alloc_slice(self.get_compartments_from_attrs().as_slice()),
                 };
                 let inputs = arena_vec![self; input_ty];
 

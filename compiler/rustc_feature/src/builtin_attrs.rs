@@ -792,6 +792,12 @@ pub static BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         ErrorFollowing, EncodeCrossCrate::Yes
     ),
 
+    // Compartments
+    ungated!(
+        compartments, Normal, template!(List: &[r#"comp1, comp2, ..."#]),
+        DuplicatesOk, EncodeCrossCrate::Yes,
+    ),
+
     // ==========================================================================
     // Unstable attributes:
     // ==========================================================================
