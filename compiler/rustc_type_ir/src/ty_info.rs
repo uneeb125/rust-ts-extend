@@ -7,6 +7,7 @@ use rustc_data_structures::fingerprint::Fingerprint;
 #[cfg(feature = "nightly")]
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 
+use crate::compartments::CompartmentsBuffer;
 use crate::{DebruijnIndex, TypeFlags};
 
 /// A helper type that you can wrap round your own type in order to automatically
@@ -51,6 +52,9 @@ pub struct WithCachedTypeInfo<T> {
     /// De Bruijn indices within the type are contained within `0..D`
     /// (exclusive).
     pub outer_exclusive_binder: DebruijnIndex,
+
+    /// Compartments of the type.
+    pub compartments: CompartmentsBuffer,
 }
 
 impl<T: PartialEq> PartialEq for WithCachedTypeInfo<T> {

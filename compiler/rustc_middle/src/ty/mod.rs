@@ -57,6 +57,7 @@ pub use rustc_type_ir::fast_reject::DeepRejectCtxt;
     rustc::non_glob_import_of_type_ir_inherent
 )]
 use rustc_type_ir::inherent;
+use rustc_type_ir::compartments::{Compartments, CompartmentsBuffer};
 pub use rustc_type_ir::relate::VarianceDiagInfo;
 pub use rustc_type_ir::solve::{CandidatePreferenceMode, SizedTraitKind};
 pub use rustc_type_ir::*;
@@ -421,6 +422,26 @@ pub struct CReaderCacheKey {
 #[rustc_diagnostic_item = "Ty"]
 #[rustc_pass_by_value]
 pub struct Ty<'tcx>(Interned<'tcx, WithCachedTypeInfo<TyKind<'tcx>>>);
+
+
+impl<'tcx> Compartments for Ty<'tcx> {
+    fn get_compartments(&self) -> CompartmentsBuffer {
+        self.0.compartments
+    }
+
+    fn set_compartments(&self, _compartments: CompartmentsBuffer) {
+        todo!()
+        // unsafe {
+        //     let inner = self.0.0 as *const WithCachedTypeInfo<TyKind<'tcx>>;
+        //
+        //     // Cast away constness, access the `compartments` field
+        //     let compartments_ptr = &(*inner).compartments as *const _ as *mut CompartmentsBuffer;
+        //
+        //     // Overwrite the value
+        //     *compartments_ptr = new_value;
+        // }
+    }
+}
 
 impl<'tcx> rustc_type_ir::inherent::IntoKind for Ty<'tcx> {
     type Kind = TyKind<'tcx>;

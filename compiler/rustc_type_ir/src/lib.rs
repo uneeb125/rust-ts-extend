@@ -34,6 +34,7 @@ pub mod relate;
 pub mod search_graph;
 pub mod solve;
 pub mod walk;
+pub mod compartments;
 
 // These modules are not `pub` since they are glob-imported.
 #[macro_use]

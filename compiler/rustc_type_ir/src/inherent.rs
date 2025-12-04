@@ -8,6 +8,7 @@ use std::hash::Hash;
 
 use rustc_ast_ir::Mutability;
 
+use crate::compartments::Compartments;
 use crate::elaborate::Elaboratable;
 use crate::fold::{TypeFoldable, TypeSuperFoldable};
 use crate::relate::Relate;
@@ -27,6 +28,7 @@ pub trait Ty<I: Interner<Ty = Self>>:
     + TypeSuperFoldable<I>
     + Relate<I>
     + Flags
+    + Compartments
 {
     fn new_unit(interner: I) -> Self;
 

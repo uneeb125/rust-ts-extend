@@ -52,6 +52,7 @@ use rustc_session::lint::Lint;
 use rustc_span::def_id::{CRATE_DEF_ID, DefPathHash, StableCrateId};
 use rustc_span::{DUMMY_SP, Ident, Span, Symbol, kw, sym};
 use rustc_type_ir::TyKind::*;
+use rustc_type_ir::compartments::CompartmentsBuffer;
 use rustc_type_ir::lang_items::{SolverAdtLangItem, SolverLangItem, SolverTraitLangItem};
 pub use rustc_type_ir::lift::Lift;
 use rustc_type_ir::{
@@ -1010,6 +1011,7 @@ impl<'tcx> CtxtInterners<'tcx> {
                         stable_hash,
                         flags: flags.flags,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
+                        compartments: CompartmentsBuffer::new(),
                     }))
                 })
                 .0,
@@ -1036,6 +1038,7 @@ impl<'tcx> CtxtInterners<'tcx> {
                         stable_hash,
                         flags: flags.flags,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
+                        compartments: CompartmentsBuffer::new(),
                     }))
                 })
                 .0,
@@ -1081,6 +1084,7 @@ impl<'tcx> CtxtInterners<'tcx> {
                         stable_hash,
                         flags: flags.flags,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
+                        compartments: CompartmentsBuffer::new(),
                     }))
                 })
                 .0,
