@@ -7,8 +7,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use rustc_ast_ir::Mutability;
+use rustc_span::Symbol;
 
-use crate::compartments::Compartments;
 use crate::elaborate::Elaboratable;
 use crate::fold::{TypeFoldable, TypeSuperFoldable};
 use crate::relate::Relate;
@@ -28,8 +28,13 @@ pub trait Ty<I: Interner<Ty = Self>>:
     + TypeSuperFoldable<I>
     + Relate<I>
     + Flags
-    + Compartments
 {
+    fn get_compartments_arr(&self, interner: I) -> [Symbol; 10];
+
+    fn set_compartments_arr(&mut self, interner: I, arr: [Symbol; 10]);
+
+    fn union_compartments_arr(&mut self, interner: I, a: [Symbol; 10], b: [Symbol; 10]);
+
     fn new_unit(interner: I) -> Self;
 
     fn new_bool(interner: I) -> Self;

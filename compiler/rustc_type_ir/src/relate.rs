@@ -4,7 +4,6 @@ use derive_where::derive_where;
 use rustc_ast_ir::Mutability;
 use tracing::{instrument, trace};
 
-use crate::compartments::{compartments_contains_same_symbol, has_non_dummy_compartments, Compartments};
 use crate::error::{ExpectedFound, TypeError};
 use crate::fold::TypeFoldable;
 use crate::inherent::*;
@@ -370,12 +369,6 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
     b: I::Ty,
 ) -> RelateResult<I, I::Ty> {
     let cx = relation.cx();
-
-    if has_non_dummy_compartments(a.get_compartments()) || has_non_dummy_compartments(b.get_compartments()) {
-        if !compartments_contains_same_symbol(a.get_compartments(), b.get_compartments()) {
-            return Err(TypeError::Sorts(ExpectedFound::new(a, b)));
-        }
-    }
 
     match (a.kind(), b.kind()) {
         (ty::Infer(_), _) | (_, ty::Infer(_)) => {

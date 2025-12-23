@@ -21,6 +21,7 @@ use rustc_type_ir::{self as ir, BoundVar, CollectAndApply, TypeVisitableExt, ela
 use tracing::instrument;
 use ty::util::IntTypeExt;
 
+
 use super::GenericParamDefKind;
 use crate::infer::canonical::Canonical;
 use crate::traits::ObligationCause;
@@ -942,6 +943,20 @@ impl<'tcx> Ty<'tcx> {
 }
 
 impl<'tcx> rustc_type_ir::inherent::Ty<TyCtxt<'tcx>> for Ty<'tcx> {
+    fn get_compartments_arr(&self, interner: TyCtxt<'tcx>) -> [Symbol; 10] {
+        interner.compartments_of(*self).get()
+    }
+
+    fn set_compartments_arr(&mut self, _interner: TyCtxt<'tcx>, _arr: [Symbol; 10]) {
+        // Compartments are immutable after interning
+        // To create a type with different compartments, use TyCtxt::intern_ty_with_compartments
+    }
+
+    fn union_compartments_arr(&mut self, _interner: TyCtxt<'tcx>, _a: [Symbol; 10], _b: [Symbol; 10]) {
+        // Compartments are immutable after interning
+        // To create a type with merged compartments, use TyCtxt::intern_ty_with_compartments
+    }
+
     fn new_bool(tcx: TyCtxt<'tcx>) -> Self {
         tcx.types.bool
     }
@@ -2096,6 +2111,6 @@ mod size_asserts {
     use super::*;
     // tidy-alphabetical-start
     static_assert_size!(TyKind<'_>, 24);
-    static_assert_size!(ty::WithCachedTypeInfo<TyKind<'_>>, 448);
+    static_assert_size!(ty::WithCachedTypeInfo<TyKind<'_>>, 56);
     // tidy-alphabetical-end
 }

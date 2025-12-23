@@ -57,7 +57,6 @@ pub use rustc_type_ir::fast_reject::DeepRejectCtxt;
     rustc::non_glob_import_of_type_ir_inherent
 )]
 use rustc_type_ir::inherent;
-use rustc_type_ir::compartments::{Compartments, CompartmentsBuffer};
 pub use rustc_type_ir::relate::VarianceDiagInfo;
 pub use rustc_type_ir::solve::{CandidatePreferenceMode, SizedTraitKind};
 pub use rustc_type_ir::*;
@@ -121,6 +120,7 @@ use crate::ty::fast_reject::SimplifiedType;
 use crate::ty::layout::LayoutError;
 use crate::ty::util::Discr;
 use crate::ty::walk::TypeWalker;
+// use crate::ty::compartments::Compartments;
 
 pub mod abstract_const;
 pub mod adjustment;
@@ -138,6 +138,7 @@ pub mod significant_drop_order;
 pub mod trait_def;
 pub mod util;
 pub mod vtable;
+pub mod compartments;
 
 mod adt;
 mod assoc;
@@ -419,29 +420,17 @@ pub struct CReaderCacheKey {
 
 /// Use this rather than `TyKind`, whenever possible.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, HashStable)]
+// #[derive(Copy, Clone, Eq, Hash, HashStable)]
 #[rustc_diagnostic_item = "Ty"]
 #[rustc_pass_by_value]
 pub struct Ty<'tcx>(Interned<'tcx, WithCachedTypeInfo<TyKind<'tcx>>>);
 
+// Compartments are stored via index in WithCachedTypeInfo and accessed via TyCtxt::compartments_of().
+// Immutable semantics: compartments are part of type identity and cannot be mutated after interning.
+// To get compartments of a type: `tcx.compartments_of(ty)`
+// To create a new type with compartments: use TyCtxt::intern_ty_with_compartments (internal)
 
-impl<'tcx> Compartments for Ty<'tcx> {
-    fn get_compartments(&self) -> CompartmentsBuffer {
-        self.0.compartments
-    }
 
-    fn set_compartments(&self, _compartments: CompartmentsBuffer) {
-        todo!()
-        // unsafe {
-        //     let inner = self.0.0 as *const WithCachedTypeInfo<TyKind<'tcx>>;
-        //
-        //     // Cast away constness, access the `compartments` field
-        //     let compartments_ptr = &(*inner).compartments as *const _ as *mut CompartmentsBuffer;
-        //
-        //     // Overwrite the value
-        //     *compartments_ptr = new_value;
-        // }
-    }
-}
 
 impl<'tcx> rustc_type_ir::inherent::IntoKind for Ty<'tcx> {
     type Kind = TyKind<'tcx>;
@@ -580,9 +569,11 @@ impl<'tcx> Term<'tcx> {
         // and this is just going in the other direction.
         unsafe {
             match self.ptr.addr().get() & TAG_MASK {
-                TYPE_TAG => TermKind::Ty(Ty(Interned::new_unchecked(
-                    ptr.cast::<WithCachedTypeInfo<ty::TyKind<'tcx>>>().as_ref(),
-                ))),
+                TYPE_TAG => TermKind::Ty(Ty(
+                    Interned::new_unchecked(
+                        ptr.cast::<WithCachedTypeInfo<ty::TyKind<'tcx>>>().as_ref(),
+                    ),
+                )),
                 CONST_TAG => TermKind::Const(ty::Const(Interned::new_unchecked(
                     ptr.cast::<WithCachedTypeInfo<ty::ConstKind<'tcx>>>().as_ref(),
                 ))),

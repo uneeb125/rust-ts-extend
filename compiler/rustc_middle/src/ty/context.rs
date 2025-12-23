@@ -12,7 +12,7 @@ use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::marker::{PhantomData, PointeeSized};
 use std::ops::{Bound, Deref};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::{fmt, iter, mem};
 
 use rustc_abi::{ExternAbi, FieldIdx, Layout, LayoutData, TargetDataLayout, VariantIdx};
@@ -52,7 +52,6 @@ use rustc_session::lint::Lint;
 use rustc_span::def_id::{CRATE_DEF_ID, DefPathHash, StableCrateId};
 use rustc_span::{DUMMY_SP, Ident, Span, Symbol, kw, sym};
 use rustc_type_ir::TyKind::*;
-use rustc_type_ir::compartments::CompartmentsBuffer;
 use rustc_type_ir::lang_items::{SolverAdtLangItem, SolverLangItem, SolverTraitLangItem};
 pub use rustc_type_ir::lift::Lift;
 use rustc_type_ir::{
@@ -83,7 +82,7 @@ use crate::ty::{
     GenericArgsRef, GenericParamDefKind, List, ListWithCachedTypeInfo, ParamConst, ParamTy,
     Pattern, PatternKind, PolyExistentialPredicate, PolyFnSig, Predicate, PredicateKind,
     PredicatePolarity, Region, RegionKind, ReprOptions, TraitObjectVisitor, Ty, TyKind, TyVid,
-    ValTree, ValTreeKind, Visibility,
+    ValTree, ValTreeKind, Visibility, compartments::CompartmentsBuffer,
 };
 
 #[allow(rustc::usage_of_ty_tykind)]
@@ -955,6 +954,9 @@ pub struct CtxtInterners<'tcx> {
     valtree: InternedSet<'tcx, ty::ValTreeKind<'tcx>>,
     patterns: InternedSet<'tcx, List<ty::Pattern<'tcx>>>,
     outlives: InternedSet<'tcx, List<ty::ArgOutlivesPredicate<'tcx>>>,
+    compartments_store: Mutex<Vec<CompartmentsBuffer>>,
+    #[allow(dead_code)]
+    compartments_map: ShardedHashMap<CompartmentsBuffer, u32>,
 }
 
 impl<'tcx> CtxtInterners<'tcx> {
@@ -962,6 +964,8 @@ impl<'tcx> CtxtInterners<'tcx> {
         // Default interner size - this value has been chosen empirically, and may need to be adjusted
         // as the compiler evolves.
         const N: usize = 2048;
+        let compartments_map = ShardedHashMap::with_capacity(N);
+        compartments_map.insert(CompartmentsBuffer::new(), 0);
         CtxtInterners {
             arena,
             // The factors have been chosen by @FractalFir based on observed interner sizes, and local perf runs.
@@ -993,6 +997,8 @@ impl<'tcx> CtxtInterners<'tcx> {
             valtree: InternedSet::with_capacity(N),
             patterns: InternedSet::with_capacity(N),
             outlives: InternedSet::with_capacity(N),
+            compartments_store: Mutex::new(vec![CompartmentsBuffer::new()]),
+            compartments_map,
         }
     }
 
@@ -1005,13 +1011,60 @@ impl<'tcx> CtxtInterners<'tcx> {
                 .intern(kind, |kind| {
                     let flags = ty::FlagComputation::<TyCtxt<'tcx>>::for_kind(&kind);
                     let stable_hash = self.stable_hash(&flags, sess, untracked, &kind);
-
                     InternedInSet(self.arena.alloc(WithCachedTypeInfo {
                         internee: kind,
                         stable_hash,
                         flags: flags.flags,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
-                        compartments: CompartmentsBuffer::new(),
+                        compartments_index: 0,
+                    }))
+                })
+                .0,
+        ))
+    }
+
+    /// Interns a type with compartments. (Use `mk_*` functions instead, where possible.)
+    #[allow(rustc::usage_of_ty_tykind)]
+    #[allow(dead_code)]
+    #[inline(never)]
+    fn intern_ty_with_compartments(
+        &self,
+        kind: TyKind<'tcx>,
+        compartments: CompartmentsBuffer,
+        sess: &Session,
+        untracked: &Untracked,
+    ) -> Ty<'tcx> {
+        // Look up or allocate compartments index
+        let compartments_index = {
+            // First check without lock
+            if let Some(index) = self.compartments_map.get(&compartments) {
+                index
+            } else {
+                // Lock the store for writing
+                let mut store = self.compartments_store.lock().unwrap();
+                // Double-check after acquiring lock
+                if let Some(index) = self.compartments_map.get(&compartments) {
+                    index
+                } else {
+                    let index = store.len() as u32;
+                    store.push(compartments);
+                    self.compartments_map.insert(compartments, index);
+                    index
+                }
+            }
+        };
+
+        Ty(Interned::new_unchecked(
+            self.type_
+                .intern(kind, |kind| {
+                    let flags = ty::FlagComputation::<TyCtxt<'tcx>>::for_kind(&kind);
+                    let stable_hash = self.stable_hash(&flags, sess, untracked, &kind);
+                    InternedInSet(self.arena.alloc(WithCachedTypeInfo {
+                        internee: kind,
+                        stable_hash,
+                        flags: flags.flags,
+                        outer_exclusive_binder: flags.outer_exclusive_binder,
+                        compartments_index,
                     }))
                 })
                 .0,
@@ -1038,7 +1091,7 @@ impl<'tcx> CtxtInterners<'tcx> {
                         stable_hash,
                         flags: flags.flags,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
-                        compartments: CompartmentsBuffer::new(),
+                        compartments_index: 0,
                     }))
                 })
                 .0,
@@ -1083,8 +1136,8 @@ impl<'tcx> CtxtInterners<'tcx> {
                         internee: kind,
                         stable_hash,
                         flags: flags.flags,
+                        compartments_index: 0,
                         outer_exclusive_binder: flags.outer_exclusive_binder,
-                        compartments: CompartmentsBuffer::new(),
                     }))
                 })
                 .0,
@@ -3024,6 +3077,12 @@ impl<'tcx> TyCtxt<'tcx> {
             // This is only used to create a stable hashing context.
             &self.untracked,
         )
+    }
+
+    /// Returns the compartments associated with a type.
+    #[inline]
+    pub fn compartments_of(self, ty: Ty<'tcx>) -> CompartmentsBuffer {
+        self.interners.compartments_store.lock().unwrap()[ty.0.compartments_index as usize]
     }
 
     pub fn mk_param_from_def(self, param: &ty::GenericParamDef) -> GenericArg<'tcx> {

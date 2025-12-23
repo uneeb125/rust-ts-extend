@@ -7,7 +7,6 @@ use rustc_data_structures::fingerprint::Fingerprint;
 #[cfg(feature = "nightly")]
 use rustc_data_structures::stable_hasher::{HashStable, StableHasher};
 
-use crate::compartments::CompartmentsBuffer;
 use crate::{DebruijnIndex, TypeFlags};
 
 /// A helper type that you can wrap round your own type in order to automatically
@@ -20,6 +19,11 @@ use crate::{DebruijnIndex, TypeFlags};
 #[derive(Copy, Clone)]
 pub struct WithCachedTypeInfo<T> {
     pub internee: T,
+
+    /// Index into the compartments store in TyCtxt. Index 0 represents empty compartments.
+    /// This field is part of type identity - two types with same `internee` but different
+    /// compartments indices are different types.
+    pub compartments_index: u32,
 
     #[cfg(feature = "nightly")]
     pub stable_hash: Fingerprint,
@@ -52,15 +56,12 @@ pub struct WithCachedTypeInfo<T> {
     /// De Bruijn indices within the type are contained within `0..D`
     /// (exclusive).
     pub outer_exclusive_binder: DebruijnIndex,
-
-    /// Compartments of the type.
-    pub compartments: CompartmentsBuffer,
 }
 
 impl<T: PartialEq> PartialEq for WithCachedTypeInfo<T> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.internee.eq(&other.internee)
+        self.internee.eq(&other.internee) && self.compartments_index == other.compartments_index
     }
 }
 
@@ -68,13 +69,14 @@ impl<T: Eq> Eq for WithCachedTypeInfo<T> {}
 
 impl<T: Ord> PartialOrd for WithCachedTypeInfo<T> {
     fn partial_cmp(&self, other: &WithCachedTypeInfo<T>) -> Option<Ordering> {
-        Some(self.internee.cmp(&other.internee))
+        Some(self.cmp(other))
     }
 }
 
 impl<T: Ord> Ord for WithCachedTypeInfo<T> {
     fn cmp(&self, other: &WithCachedTypeInfo<T>) -> Ordering {
         self.internee.cmp(&other.internee)
+            .then(self.compartments_index.cmp(&other.compartments_index))
     }
 }
 
@@ -92,10 +94,12 @@ impl<T: Hash> Hash for WithCachedTypeInfo<T> {
     fn hash<H: Hasher>(&self, s: &mut H) {
         #[cfg(feature = "nightly")]
         if self.stable_hash != Fingerprint::ZERO {
+            // stable_hash already includes compartments_index
             return self.stable_hash.hash(s);
         }
 
-        self.internee.hash(s)
+        self.internee.hash(s);
+        self.compartments_index.hash(s);
     }
 }
 
@@ -112,6 +116,7 @@ impl<T: HashStable<CTX>, CTX> HashStable<CTX> for WithCachedTypeInfo<T> {
             let stable_hash: Fingerprint = {
                 let mut hasher = StableHasher::new();
                 self.internee.hash_stable(hcx, &mut hasher);
+                self.compartments_index.hash_stable(hcx, &mut hasher);
                 hasher.finish()
             };
             if cfg!(debug_assertions) && self.stable_hash != Fingerprint::ZERO {
