@@ -2,6 +2,7 @@ use std::iter;
 
 use derive_where::derive_where;
 use rustc_ast_ir::Mutability;
+use rustc_span::{Symbol, sym};
 use tracing::{instrument, trace};
 
 use crate::error::{ExpectedFound, TypeError};
@@ -397,12 +398,17 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         (ty::Param(a_p), ty::Param(b_p)) if a_p.index() == b_p.index() => {
             // FIXME: Put this back
             //debug_assert_eq!(a_p.name(), b_p.name(), "param types with same index differ in name");
+            check_compartments(relation, a, b)?;
             Ok(a)
         }
 
-        (ty::Placeholder(p1), ty::Placeholder(p2)) if p1 == p2 => Ok(a),
+        (ty::Placeholder(p1), ty::Placeholder(p2)) if p1 == p2 => {
+            check_compartments(relation, a, b)?;
+            Ok(a)
+        }
 
         (ty::Adt(a_def, a_args), ty::Adt(b_def, b_args)) if a_def == b_def => {
+            check_compartments(relation, a, b)?;
             Ok(if a_args.is_empty() {
                 a
             } else {
@@ -411,15 +417,22 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
             })
         }
 
-        (ty::Foreign(a_id), ty::Foreign(b_id)) if a_id == b_id => Ok(Ty::new_foreign(cx, a_id)),
+        (ty::Foreign(a_id), ty::Foreign(b_id)) if a_id == b_id => {
+            check_compartments(relation, a, b)?;
+            Ok(Ty::new_foreign(cx, a_id))
+        }
 
-        (ty::Dynamic(a_obj, a_region), ty::Dynamic(b_obj, b_region)) => Ok(Ty::new_dynamic(
-            cx,
-            relation.relate(a_obj, b_obj)?,
-            relation.relate(a_region, b_region)?,
-        )),
+        (ty::Dynamic(a_obj, a_region), ty::Dynamic(b_obj, b_region)) => {
+            check_compartments(relation, a, b)?;
+            Ok(Ty::new_dynamic(
+                cx,
+                relation.relate(a_obj, b_obj)?,
+                relation.relate(a_region, b_region)?,
+            ))
+        }
 
         (ty::Coroutine(a_id, a_args), ty::Coroutine(b_id, b_args)) if a_id == b_id => {
+            check_compartments(relation, a, b)?;
             // All Coroutine types with the same id represent
             // the (anonymous) type of the same coroutine expression. So
             // all of their regions should be equated.
@@ -430,6 +443,7 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         (ty::CoroutineWitness(a_id, a_args), ty::CoroutineWitness(b_id, b_args))
             if a_id == b_id =>
         {
+            check_compartments(relation, a, b)?;
             // All CoroutineWitness types with the same id represent
             // the (anonymous) type of the same coroutine expression. So
             // all of their regions should be equated.
@@ -438,6 +452,7 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::Closure(a_id, a_args), ty::Closure(b_id, b_args)) if a_id == b_id => {
+            check_compartments(relation, a, b)?;
             // All Closure types with the same id represent
             // the (anonymous) type of the same closure expression. So
             // all of their regions should be equated.
@@ -448,11 +463,13 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         (ty::CoroutineClosure(a_id, a_args), ty::CoroutineClosure(b_id, b_args))
             if a_id == b_id =>
         {
+            check_compartments(relation, a, b)?;
             let args = relate_args_invariantly(relation, a_args, b_args)?;
             Ok(Ty::new_coroutine_closure(cx, a_id, args))
         }
 
         (ty::RawPtr(a_ty, a_mutbl), ty::RawPtr(b_ty, b_mutbl)) => {
+            check_compartments(relation, a, b)?;
             if a_mutbl != b_mutbl {
                 return Err(TypeError::Mutability);
             }
@@ -470,6 +487,7 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::Ref(a_r, a_ty, a_mutbl), ty::Ref(b_r, b_ty, b_mutbl)) => {
+            check_compartments(relation, a, b)?;
             if a_mutbl != b_mutbl {
                 return Err(TypeError::Mutability);
             }
@@ -488,6 +506,7 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::Array(a_t, sz_a), ty::Array(b_t, sz_b)) => {
+            check_compartments(relation, a, b)?;
             let t = relation.relate(a_t, b_t)?;
             match relation.relate(sz_a, sz_b) {
                 Ok(sz) => Ok(Ty::new_array_with_const_len(cx, t, sz)),
@@ -499,11 +518,13 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::Slice(a_t), ty::Slice(b_t)) => {
+            check_compartments(relation, a, b)?;
             let t = relation.relate(a_t, b_t)?;
             Ok(Ty::new_slice(cx, t))
         }
 
         (ty::Tuple(as_), ty::Tuple(bs)) => {
+            check_compartments(relation, a, b)?;
             if as_.len() == bs.len() {
                 Ok(Ty::new_tup_from_iter(
                     cx,
@@ -517,6 +538,7 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::FnDef(a_def_id, a_args), ty::FnDef(b_def_id, b_args)) if a_def_id == b_def_id => {
+            check_compartments(relation, a, b)?;
             Ok(if a_args.is_empty() {
                 a
             } else {
@@ -526,24 +548,28 @@ pub fn structurally_relate_tys<I: Interner, R: TypeRelation<I>>(
         }
 
         (ty::FnPtr(a_sig_tys, a_hdr), ty::FnPtr(b_sig_tys, b_hdr)) => {
+            check_compartments(relation, a, b)?;
             let fty = relation.relate(a_sig_tys.with(a_hdr), b_sig_tys.with(b_hdr))?;
             Ok(Ty::new_fn_ptr(cx, fty))
         }
 
         // Alias tend to mostly already be handled downstream due to normalization.
         (ty::Alias(a_kind, a_data), ty::Alias(b_kind, b_data)) => {
+            check_compartments(relation, a, b)?;
             let alias_ty = relation.relate(a_data, b_data)?;
             assert_eq!(a_kind, b_kind);
             Ok(Ty::new_alias(cx, a_kind, alias_ty))
         }
 
         (ty::Pat(a_ty, a_pat), ty::Pat(b_ty, b_pat)) => {
+            check_compartments(relation, a, b)?;
             let ty = relation.relate(a_ty, b_ty)?;
             let pat = relation.relate(a_pat, b_pat)?;
             Ok(Ty::new_pat(cx, ty, pat))
         }
 
         (ty::UnsafeBinder(a_binder), ty::UnsafeBinder(b_binder)) => {
+            check_compartments(relation, a, b)?;
             Ok(Ty::new_unsafe_binder(cx, relation.binders(*a_binder, *b_binder)?))
         }
 
@@ -629,6 +655,49 @@ pub fn structurally_relate_consts<I: Interner, R: TypeRelation<I>>(
         _ => false,
     };
     if is_match { Ok(a) } else { Err(TypeError::ConstMismatch(ExpectedFound::new(a, b))) }
+}
+
+/// Check if two compartment arrays are compatible according to compartment rules.
+/// Returns true if the compartments intersect (share at least one non-dummy symbol)
+/// or if at least one array contains only dummy symbols.
+fn compartments_compatible(a: [Symbol; 10], b: [Symbol; 10]) -> bool {
+    fn has_non_dummy(inp: [Symbol; 10]) -> bool {
+        inp.iter().any(|s| s != sym::dummy)
+    }
+
+    fn has_common_non_dummy(a: [Symbol; 10], b: [Symbol; 10]) -> bool {
+        for &sym_a in &a {
+            if sym_a != sym::dummy {
+                for &sym_b in &b {
+                    if sym_b != sym::dummy && sym_a == sym_b {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    match (has_non_dummy(a), has_non_dummy(b)) {
+        (true, true) => has_common_non_dummy(a, b),
+        (true, false) => true,
+        (false, true) => true,
+        (false, false) => true,
+    }
+}
+
+fn check_compartments<I: Interner, R: TypeRelation<I>>(
+    relation: &mut R,
+    a: I::Ty,
+    b: I::Ty,
+) -> RelateResult<I, ()> {
+    let a_compartments = a.get_compartments_arr(relation.cx());
+    let b_compartments = b.get_compartments_arr(relation.cx());
+    if compartments_compatible(a_compartments, b_compartments) {
+        Ok(())
+    } else {
+        Err(TypeError::CompartmentViolation)
+    }
 }
 
 impl<I: Interner, T: Relate<I>> Relate<I> for ty::Binder<I, T> {

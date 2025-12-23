@@ -27,6 +27,7 @@ pub enum TypeError<I: Interner> {
     SafetyMismatch(#[type_visitable(ignore)] ExpectedFound<I::Safety>),
     AbiMismatch(#[type_visitable(ignore)] ExpectedFound<I::Abi>),
     Mutability,
+    CompartmentViolation,
     ArgumentMutability(usize),
     TupleSize(ExpectedFound<usize>),
     ArraySize(ExpectedFound<I::Const>),
@@ -78,6 +79,7 @@ impl<I: Interner> TypeError<I> {
             | VariadicMismatch(_) | TargetFeatureCast(_) => false,
 
             Mutability
+            | CompartmentViolation
             | ArgumentMutability(_)
             | TupleSize(_)
             | ArgCount

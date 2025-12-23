@@ -3079,6 +3079,24 @@ impl<'tcx> TyCtxt<'tcx> {
         )
     }
 
+    /// Create a type with compartments. Prefer more specific `Ty::new_*` methods where possible.
+    #[allow(rustc::usage_of_ty_tykind)]
+    #[inline]
+    pub fn mk_ty_with_compartments(self, st: TyKind<'tcx>, compartments: CompartmentsBuffer) -> Ty<'tcx> {
+        self.interners.intern_ty_with_compartments(
+            st,
+            compartments,
+            self.sess,
+            &self.untracked,
+        )
+    }
+
+    /// Create a type with compartments from an existing type.
+    #[inline]
+    pub fn mk_ty_with_compartments_from_ty(self, ty: Ty<'tcx>, compartments: CompartmentsBuffer) -> Ty<'tcx> {
+        self.mk_ty_with_compartments(ty.kind().clone(), compartments)
+    }
+
     /// Returns the compartments associated with a type.
     #[inline]
     pub fn compartments_of(self, ty: Ty<'tcx>) -> CompartmentsBuffer {

@@ -40,6 +40,7 @@ use rustc_middle::ty::{
     self, Const, GenericArgKind, GenericArgsRef, GenericParamDefKind, Ty, TyCtxt, TypeVisitableExt,
     TypingMode, Upcast, fold_regions,
 };
+use rustc_middle::ty::compartments::CompartmentsBuffer;
 use rustc_middle::{bug, span_bug};
 use rustc_session::lint::builtin::AMBIGUOUS_ASSOCIATED_ITEMS;
 use rustc_session::parse::feature_err;
@@ -2595,6 +2596,13 @@ impl<'tcx> dyn HirTyLowerer<'tcx> + '_ {
                 pat_ty
             }
             hir::TyKind::Err(guar) => Ty::new_error(tcx, *guar),
+        };
+
+        let compartments = CompartmentsBuffer::from_slice(hir_ty.compartments);
+        let result_ty = if compartments.get().iter().any(|s| *s != sym::dummy) {
+            tcx.mk_ty_with_compartments_from_ty(result_ty, compartments)
+        } else {
+            result_ty
         };
 
         self.record_ty(hir_ty.hir_id, result_ty, hir_ty.span);

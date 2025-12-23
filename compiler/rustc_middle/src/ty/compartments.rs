@@ -14,6 +14,13 @@ impl CompartmentsBuffer {
         Self(arr)
     }
 
+    pub fn from_slice(slice: &[Symbol]) -> Self {
+        let mut arr = [sym::dummy; 10];
+        let len = slice.len().min(10);
+        arr[..len].copy_from_slice(&slice[..len]);
+        Self(arr)
+    }
+
     pub fn get(&self) -> [Symbol; 10] {
         self.0
     }

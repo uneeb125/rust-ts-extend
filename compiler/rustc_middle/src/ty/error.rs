@@ -51,6 +51,9 @@ impl<'tcx> TypeError<'tcx> {
             TypeError::ArgumentMutability(_) | TypeError::Mutability => {
                 "types differ in mutability".into()
             }
+            TypeError::CompartmentViolation => {
+                "compartment violation: types belong to incompatible compartments".into()
+            }
             TypeError::TupleSize(values) => format!(
                 "expected a tuple with {} element{}, found one with {} element{}",
                 values.expected,
