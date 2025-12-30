@@ -104,6 +104,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             expr.hir_id, expr, op, lhs_expr, rhs_expr
         );
 
+        // Check compartment compatibility between operands
+        let lhs_comps = self.infer_compartments(lhs_expr.hir_id);
+        let rhs_comps = self.infer_compartments(rhs_expr.hir_id);
+        self.check_compartments_eq(expr.span, &lhs_comps, &rhs_comps);
+
         match BinOpCategory::from(op.node) {
             BinOpCategory::Shortcircuit => {
                 // && and || are a simple case.

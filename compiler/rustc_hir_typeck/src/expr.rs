@@ -128,6 +128,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             extend_err(&mut err);
             err.emit();
         }
+
+        // Infer and set compartments for this expression
+        let compartments = self.infer_compartments(expr.hir_id);
+        self.write_compartments(expr.hir_id, &compartments);
+
         ty
     }
 
