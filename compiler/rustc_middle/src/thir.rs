@@ -256,6 +256,9 @@ pub struct Expr<'tcx> {
     /// The type of this expression
     pub ty: Ty<'tcx>,
 
+    /// The compartments this expression belongs to
+    pub compartments: &'tcx [Symbol],
+
     /// The lifetime of this expression if it should be spilled into a
     /// temporary
     pub temp_lifetime: TempLifetime,
@@ -1127,7 +1130,7 @@ mod size_asserts {
     use super::*;
     // tidy-alphabetical-start
     static_assert_size!(Block, 48);
-    static_assert_size!(Expr<'_>, 72);
+    static_assert_size!(Expr<'_>, 88);
     static_assert_size!(ExprKind<'_>, 40);
     static_assert_size!(Pat<'_>, 64);
     static_assert_size!(PatKind<'_>, 48);

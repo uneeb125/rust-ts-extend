@@ -73,6 +73,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         expr = Expr {
             temp_lifetime: expr.temp_lifetime,
             ty: expr.ty,
+            compartments: &[],
             span: hir_expr.span,
             kind: ExprKind::Scope {
                 region_scope: expr_scope,
@@ -154,6 +155,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 expr = Expr {
                     temp_lifetime,
                     ty: Ty::new_ref(self.tcx, self.tcx.lifetimes.re_erased, expr.ty, deref.mutbl),
+                    compartments: &[],
                     span,
                     kind: ExprKind::Borrow {
                         borrow_kind: deref.mutbl.to_borrow_kind(),
@@ -199,7 +201,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     variant_index: FIRST_VARIANT,
                     name: FieldIdx::ZERO,
                 };
-                let arg = Expr { temp_lifetime, ty: pin_ty, span, kind: pointer_target };
+                let arg = Expr { temp_lifetime, ty: pin_ty, compartments: &[], span, kind: pointer_target };
                 let arg = self.thir.exprs.push(arg);
 
                 // arg = *pointer
@@ -207,6 +209,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 let arg = self.thir.exprs.push(Expr {
                     temp_lifetime,
                     ty: ptr_target_ty,
+                    compartments: &[],
                     span,
                     kind: expr,
                 });
@@ -221,6 +224,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 let expr = self.thir.exprs.push(Expr {
                     temp_lifetime,
                     ty: new_pin_target,
+                    compartments: &[],
                     span,
                     kind: ExprKind::Borrow { borrow_kind, arg },
                 });
@@ -242,7 +246,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
             }
         };
 
-        Expr { temp_lifetime, ty: adjustment.target, span, kind }
+        Expr { temp_lifetime, ty: adjustment.target, compartments: &[], span, kind }
     }
 
     /// Lowers a cast expression.
@@ -309,7 +313,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 );
             }
             let kind = ExprKind::NonHirLiteral { lit, user_ty: None };
-            let offset = self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, span, kind });
+            let offset = self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind });
 
             let source = match discr_did {
                 // in case we are offsetting from a computed discriminant
@@ -317,9 +321,9 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 Some(did) => {
                     let kind = ExprKind::NamedConst { def_id: did, args, user_ty: None };
                     let lhs =
-                        self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, span, kind });
+                        self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind });
                     let bin = ExprKind::Binary { op: BinOp::Add, lhs, rhs: offset };
-                    self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, span, kind: bin })
+                    self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind: bin })
                 }
                 None => offset,
             };
@@ -372,6 +376,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     let arg_tys = args.iter().map(|e| self.typeck_results.expr_ty_adjusted(e));
                     let tupled_args = Expr {
                         ty: Ty::new_tup_from_iter(tcx, arg_tys),
+                        compartments: &[],
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: expr.span,
                         kind: ExprKind::Tuple { fields: self.mirror_exprs(args) },
@@ -400,6 +405,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     return Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty: expr_ty,
+                        compartments: &[],
                         span: expr.span,
                         kind: ExprKind::Box { value: self.mirror_expr(value) },
                     };
@@ -509,6 +515,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         arg = self.thir.exprs.push(Expr {
                             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                             ty: arg_ty,
+                            compartments: &[],
                             span: arg_expr.span,
                             kind: ExprKind::Block { block },
                         });
@@ -516,6 +523,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     let expr = self.thir.exprs.push(Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty,
+                        compartments: &[],
                         span: expr.span,
                         kind: ExprKind::Borrow { borrow_kind: mutbl.to_borrow_kind(), arg },
                     });
@@ -1003,6 +1011,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     let block = self.mirror_block(body);
                     let body = self.thir.exprs.push(Expr {
                         ty: block_ty,
+                        compartments: &[],
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: self.thir[block].span,
                         kind: ExprKind::Block { block },
@@ -1037,6 +1046,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     let cast_expr = self.thir.exprs.push(Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty: expr_ty,
+                        compartments: &[],
                         span: expr.span,
                         kind: cast,
                     });
@@ -1097,6 +1107,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: expr_ty,
+            compartments: &[],
             span: expr.span,
             kind,
         }
@@ -1163,6 +1174,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty,
+            compartments: &[],
             span,
             kind: ExprKind::ZstLiteral { user_ty },
         }
@@ -1250,6 +1262,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 ExprKind::Deref {
                     arg: self.thir.exprs.push(Expr {
                         ty,
+                        compartments: &[],
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: expr.span,
                         kind,
@@ -1329,6 +1342,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         let ref_expr = self.thir.exprs.push(Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: ref_ty,
+            compartments: &[],
             span,
             kind: ExprKind::Call { ty: fun_ty, fun, args, from_hir_call: false, fn_span: span },
         });
@@ -1360,6 +1374,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         let mut captured_place_expr = Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: var_ty,
+            compartments: &[],
             span: closure_expr.span,
             kind: self.convert_var(var_hir_id),
         };
@@ -1389,6 +1404,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
             captured_place_expr = Expr {
                 temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                 ty: proj.ty,
+                compartments: &[],
                 span: closure_expr.span,
                 kind,
             };
@@ -1419,6 +1435,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 Expr {
                     temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                     ty: upvar_ty,
+                    compartments: &[],
                     span: closure_expr.span,
                     kind: ExprKind::ByUse { expr: expr_id, span },
                 }
@@ -1436,6 +1453,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 Expr {
                     temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                     ty: upvar_ty,
+                    compartments: &[],
                     span: closure_expr.span,
                     kind: ExprKind::Borrow {
                         borrow_kind,
