@@ -15,7 +15,7 @@ use rustc_hir::{
 use rustc_index::IndexVec;
 use rustc_macros::{HashStable, TyDecodable, TyEncodable, TypeFoldable, TypeVisitable};
 use rustc_session::Session;
-use rustc_span::Span;
+use rustc_span::{Span, Symbol};
 
 use super::RvalueScopes;
 use crate::hir::place::Place as HirPlace;
@@ -46,6 +46,11 @@ pub struct TypeckResults<'tcx> {
     /// is not guaranteed to be populated outside inference. See
     /// typeck::check::fn_ctxt for details.
     node_types: ItemLocalMap<Ty<'tcx>>,
+
+    /// Stores the comparments for various nodes in the AST. Note that this table
+    /// is not guaranteed to be populated outside inference. See
+    /// typeck::check::fn_ctxt for details.
+    node_compartments: ItemLocalMap<Vec<Symbol>>,
 
     /// Stores the type parameters which were instantiated to obtain the type
     /// of this node. This only applies to nodes that refer to entities
@@ -238,6 +243,7 @@ impl<'tcx> TypeckResults<'tcx> {
             user_provided_types: Default::default(),
             user_provided_sigs: Default::default(),
             node_types: Default::default(),
+            node_compartments: Default::default(),
             node_args: Default::default(),
             adjustments: Default::default(),
             pat_binding_modes: Default::default(),
@@ -401,6 +407,33 @@ impl<'tcx> TypeckResults<'tcx> {
 
     pub fn expr_ty_adjusted_opt(&self, expr: &hir::Expr<'_>) -> Option<Ty<'tcx>> {
         self.expr_adjustments(expr).last().map(|adj| adj.target).or_else(|| self.expr_ty_opt(expr))
+    }
+
+    pub fn node_compartments(&self, id: HirId) -> &[Symbol] {
+        let result = self.node_compartments_opt(id).unwrap_or(&[]);
+        eprintln!("node_compartments for {:?}: {:?}", id, result);
+        result
+    }
+
+    pub fn node_compartments_opt(&self, id: HirId) -> Option<&[Symbol]> {
+        validate_hir_id_for_typeck_results(self.hir_owner, id);
+        self.node_compartments.get(&id.local_id).map(|v| v.as_slice())
+    }
+
+    pub fn node_compartments_mut(&mut self) -> LocalTableInContextMut<'_, Vec<Symbol>> {
+        LocalTableInContextMut { hir_owner: self.hir_owner, data: &mut self.node_compartments }
+    }
+
+    pub fn expr_compartments(&self, expr: &hir::Expr<'_>) -> &[Symbol] {
+        self.node_compartments(expr.hir_id)
+    }
+
+    pub fn expr_compartments_opt(&self, expr: &hir::Expr<'_>) -> Option<&[Symbol]> {
+        self.node_compartments_opt(expr.hir_id)
+    }
+
+    pub fn pat_compartments(&self, pat: &hir::Pat<'_>) -> &[Symbol] {
+        self.node_compartments(pat.hir_id)
     }
 
     pub fn is_method_call(&self, expr: &hir::Expr<'_>) -> bool {
