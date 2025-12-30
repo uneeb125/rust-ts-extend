@@ -11,7 +11,9 @@ use std::ops::Deref;
 use hir::def_id::CRATE_DEF_ID;
 use rustc_errors::DiagCtxtHandle;
 use rustc_hir::def_id::{DefId, LocalDefId};
-use rustc_hir::{self as hir, HirId, ItemLocalMap};
+use rustc_hir::{self as hir, HirId, ItemLocalMap, find_attr};
+use rustc_hir::attrs::AttributeKind;
+use rustc_span::Symbol;
 use rustc_hir_analysis::hir_ty_lowering::{
     HirTyLowerer, InherentAssocCandidate, RegionInferReason,
 };
@@ -216,6 +218,71 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 steps
             }),
+        }
+    }
+
+    /// Write compartments for a HIR node
+    /// Converts &[Symbol] to Vec<Symbol> for storage in TypeckResults
+    #[allow(dead_code)]
+    pub(crate) fn write_compartments(&self, hir_id: HirId, compartments: &[Symbol]) {
+        eprintln!("write_compartments: {:?} -> {:?}", hir_id, compartments);
+        self.typeck_results
+            .borrow_mut()
+            .node_compartments_mut()
+            .insert(hir_id, compartments.to_vec());
+    }
+
+    /// Get compartments from function/closure/const definition
+    /// Checks for #[compartments(...)] attribute on the owner
+    #[allow(dead_code)]
+    pub(crate) fn owner_compartments(&self) -> Vec<Symbol> {
+        let owner_id = self.tcx.local_def_id_to_hir_id(self.body_id);
+        let attrs = self.tcx.hir_attrs(owner_id);
+
+        if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
+            eprintln!("owner_compartments found: {:?}", comps);
+            return comps.iter().map(|(sym, _span)| *sym).collect();
+        }
+
+        eprintln!("owner_compartments: none found, returning empty");
+        Vec::new()
+    }
+
+    /// Infer compartments for a HIR node
+    #[allow(dead_code)]
+    pub(crate) fn infer_compartments(&self, hir_id: HirId) -> Vec<Symbol> {
+        // 1. Check for explicit compartments attribute on this node
+        let attrs = self.tcx.hir_attrs(hir_id);
+        if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
+            let result = comps.iter().map(|(sym, _span)| *sym).collect();
+            eprintln!("infer_compartments({:?}): explicit attribute -> {:?}", hir_id, result);
+            return result;
+        }
+
+        // 2. Inherit from owner (function, const, etc.)
+        let owner_comps = self.owner_compartments();
+        if !owner_comps.is_empty() {
+            eprintln!(
+                "infer_compartments({:?}): inherited from owner -> {:?}",
+                hir_id,
+                owner_comps
+            );
+            return owner_comps;
+        }
+
+        // 3. Default: no compartments
+        eprintln!("infer_compartments({:?}): default (empty)", hir_id);
+        Vec::new()
+    }
+
+    /// Check that two compartment lists match
+    /// Emits error if they don't (TODO: add error type in Step 6)
+    #[allow(dead_code)]
+    pub(crate) fn check_compartments_eq(&self, span: Span, expected: &[Symbol], actual: &[Symbol]) {
+        eprintln!("check_compartments_eq: expected {:?}, actual {:?}", expected, actual);
+        if expected != actual {
+            eprintln!("COMPARTMENT MISMATCH at {:?}: expected {:?}, got {:?}", span, expected, actual);
+            // TODO: emit proper error in Step 6
         }
     }
 }
