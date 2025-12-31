@@ -70,10 +70,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
         trace!(?expr.ty, "after adjustments");
 
         // Finally, wrap this up in the expr's scope.
+
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
         expr = Expr {
             temp_lifetime: expr.temp_lifetime,
             ty: expr.ty,
-            compartments: &[],
+            compartments,
             span: hir_expr.span,
             kind: ExprKind::Scope {
                 region_scope: expr_scope,
@@ -152,10 +156,13 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 let overloaded_callee =
                     Ty::new_fn_def(self.tcx, call_def_id, self.tcx.mk_args(&[expr.ty.into()]));
 
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
                 expr = Expr {
                     temp_lifetime,
                     ty: Ty::new_ref(self.tcx, self.tcx.lifetimes.re_erased, expr.ty, deref.mutbl),
-                    compartments: &[],
+                    compartments,
                     span,
                     kind: ExprKind::Borrow {
                         borrow_kind: deref.mutbl.to_borrow_kind(),
@@ -206,10 +213,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
 
                 // arg = *pointer
                 let expr = ExprKind::Deref { arg };
+
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
                 let arg = self.thir.exprs.push(Expr {
                     temp_lifetime,
                     ty: ptr_target_ty,
-                    compartments: &[],
+                    compartments,
                     span,
                     kind: expr,
                 });
@@ -221,10 +232,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 };
                 let new_pin_target =
                     Ty::new_ref(self.tcx, self.tcx.lifetimes.re_erased, ptr_target_ty, mutbl);
+
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
                 let expr = self.thir.exprs.push(Expr {
                     temp_lifetime,
                     ty: new_pin_target,
-                    compartments: &[],
+                    compartments,
                     span,
                     kind: ExprKind::Borrow { borrow_kind, arg },
                 });
@@ -402,10 +417,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         );
                     }
                     let value = &args[0];
+
+                    // Get compartments from TypeckResults
+                    let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
                     return Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty: expr_ty,
-                        compartments: &[],
+                        compartments,
                         span: expr.span,
                         kind: ExprKind::Box { value: self.mirror_expr(value) },
                     };
@@ -512,10 +531,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         let (temp_lifetime, backwards_incompatible) = self
                             .rvalue_scopes
                             .temporary_scope(self.region_scope_tree, arg_expr.hir_id.local_id);
+
+                            // Get compartments from TypeckResults
+                            let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
                         arg = self.thir.exprs.push(Expr {
                             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                             ty: arg_ty,
-                            compartments: &[],
+                            compartments,
                             span: arg_expr.span,
                             kind: ExprKind::Block { block },
                         });
@@ -1043,10 +1066,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 if let Some(user_ty) = user_ty {
                     // NOTE: Creating a new Expr and wrapping a Cast inside of it may be
                     //       inefficient, revisit this when performance becomes an issue.
+
+                    // Get compartments from TypeckResults
+                    let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
                     let cast_expr = self.thir.exprs.push(Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty: expr_ty,
-                        compartments: &[],
+                        compartments,
                         span: expr.span,
                         kind: cast,
                     });
@@ -1104,10 +1131,13 @@ impl<'tcx> ThirBuildCx<'tcx> {
             hir::ExprKind::Err(_) => unreachable!("cannot lower a `hir::ExprKind::Err` to THIR"),
         };
 
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
         Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: expr_ty,
-            compartments: &[],
+            compartments,
             span: expr.span,
             kind,
         }
@@ -1339,10 +1369,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
         let fun = self.method_callee(expr, span, overloaded_callee);
         let fun = self.thir.exprs.push(fun);
         let fun_ty = self.thir[fun].ty;
+
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
         let ref_expr = self.thir.exprs.push(Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: ref_ty,
-            compartments: &[],
+            compartments,
             span,
             kind: ExprKind::Call { ty: fun_ty, fun, args, from_hir_call: false, fn_span: span },
         });
@@ -1371,10 +1405,13 @@ impl<'tcx> ThirBuildCx<'tcx> {
             base => bug!("Expected an upvar, found {:?}", base),
         };
 
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(closure_expr.hir_id);
+
         let mut captured_place_expr = Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: var_ty,
-            compartments: &[],
+            compartments,
             span: closure_expr.span,
             kind: self.convert_var(var_hir_id),
         };
@@ -1401,10 +1438,13 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 }
             };
 
+            // Get compartments from TypeckResults
+            let compartments = self.typeck_results.node_compartments(closure_expr.hir_id);
+
             captured_place_expr = Expr {
                 temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                 ty: proj.ty,
-                compartments: &[],
+                compartments,
                 span: closure_expr.span,
                 kind,
             };
@@ -1432,10 +1472,13 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 let span = captured_place_expr.span;
                 let expr_id = self.thir.exprs.push(captured_place_expr);
 
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(closure_expr.hir_id);
+
                 Expr {
                     temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                     ty: upvar_ty,
-                    compartments: &[],
+                    compartments,
                     span: closure_expr.span,
                     kind: ExprKind::ByUse { expr: expr_id, span },
                 }
@@ -1450,10 +1493,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         BorrowKind::Mut { kind: mir::MutBorrowKind::Default }
                     }
                 };
+
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(closure_expr.hir_id);
+
                 Expr {
                     temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                     ty: upvar_ty,
-                    compartments: &[],
+                    compartments,
                     span: closure_expr.span,
                     kind: ExprKind::Borrow {
                         borrow_kind,

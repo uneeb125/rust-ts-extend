@@ -224,7 +224,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     /// Write compartments for a HIR node
     /// Converts &[Symbol] to Vec<Symbol> for storage in TypeckResults
-    #[allow(dead_code)]
     pub(crate) fn write_compartments(&self, hir_id: HirId, compartments: &[Symbol]) {
         eprintln!("write_compartments: {:?} -> {:?}", hir_id, compartments);
         self.typeck_results
@@ -235,7 +234,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     /// Get compartments from function/closure/const definition
     /// Checks for #[compartments(...)] attribute on the owner
-    #[allow(dead_code)]
     pub(crate) fn owner_compartments(&self) -> Vec<Symbol> {
         let owner_id = self.tcx.local_def_id_to_hir_id(self.body_id);
         let attrs = self.tcx.hir_attrs(owner_id);
@@ -250,7 +248,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     /// Infer compartments for a HIR node
-    #[allow(dead_code)]
     pub(crate) fn infer_compartments(&self, hir_id: HirId) -> Vec<Symbol> {
         // 1. Check for explicit compartments attribute on this node
         let attrs = self.tcx.hir_attrs(hir_id);
@@ -277,7 +274,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     /// Check that two compartment lists match
-    #[allow(dead_code)]
     pub(crate) fn check_compartments_eq(&self, span: Span, expected: &[Symbol], actual: &[Symbol]) {
         eprintln!("check_compartments_eq: expected {:?}, actual {:?}", expected, actual);
         if expected != actual {
