@@ -1097,6 +1097,15 @@ pub(crate) struct NakedAsmOutsideNakedFn {
 }
 
 #[derive(Diagnostic)]
+#[diag(hir_typeck_compartment_mismatch, code = E0999)]
+pub(crate) struct CompartmentMismatch {
+    #[primary_span]
+    pub span: Span,
+    pub expected: String,
+    pub actual: String,
+}
+
+#[derive(Diagnostic)]
 #[diag(hir_typeck_no_patterns)]
 pub(crate) struct NoPatterns {
     #[primary_span]

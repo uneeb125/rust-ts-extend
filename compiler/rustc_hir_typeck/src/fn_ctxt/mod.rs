@@ -28,6 +28,7 @@ use rustc_trait_selection::traits::{
 };
 
 use crate::coercion::DynamicCoerceMany;
+use crate::errors::CompartmentMismatch;
 use crate::fallback::DivergingFallbackBehavior;
 use crate::fn_ctxt::checks::DivergingBlockBehavior;
 use crate::{CoroutineTypes, Diverges, EnclosingBreakables, TypeckRootCtxt};
@@ -276,13 +277,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     }
 
     /// Check that two compartment lists match
-    /// Emits error if they don't (TODO: add error type in Step 6)
     #[allow(dead_code)]
     pub(crate) fn check_compartments_eq(&self, span: Span, expected: &[Symbol], actual: &[Symbol]) {
         eprintln!("check_compartments_eq: expected {:?}, actual {:?}", expected, actual);
         if expected != actual {
-            eprintln!("COMPARTMENT MISMATCH at {:?}: expected {:?}, got {:?}", span, expected, actual);
-            // TODO: emit proper error in Step 6
+            let expected_str = expected.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ");
+            let actual_str = actual.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ");
+
+            self.dcx().emit_err(CompartmentMismatch {
+                span,
+                expected: expected_str,
+                actual: actual_str,
+            });
         }
     }
 }

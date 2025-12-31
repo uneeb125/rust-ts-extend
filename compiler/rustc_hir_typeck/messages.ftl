@@ -303,3 +303,7 @@ hir_typeck_use_is_empty =
 
 hir_typeck_yield_expr_outside_of_coroutine =
     yield expression outside of coroutine literal
+
+hir_typeck_compartment_mismatch = mismatched compartments
+    .expected = expected compartments: `{$expected}`
+    .actual = actual compartments: `{$actual}`
