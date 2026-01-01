@@ -2011,6 +2011,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             base_expr,
         );
 
+        // NOTE: Struct compartment checking disabled for now
+        // TODO: Debug why compartment checking causes compiler_builtins to fail
         self.require_type_is_sized(adt_ty, expr.span, ObligationCauseCode::StructInitializerSized);
         adt_ty
     }
@@ -2905,6 +2907,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             self.apply_adjustments(base, adjustments);
                             self.register_predicates(autoderef.into_obligations());
 
+                            // NOTE: Field compartment checking disabled for now
+                            // TODO: Debug why it causes compiler_builtins to fail
                             self.tcx.check_stability(field.did, Some(expr.hir_id), expr.span, None);
                             return self.field_ty(expr.span, field, args);
                         }

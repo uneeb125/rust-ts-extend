@@ -225,7 +225,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Write compartments for a HIR node
     /// Converts &[Symbol] to Vec<Symbol> for storage in TypeckResults
     pub(crate) fn write_compartments(&self, hir_id: HirId, compartments: &[Symbol]) {
-        eprintln!("write_compartments: {:?} -> {:?}", hir_id, compartments);
+        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("write_compartments: {:?} -> {:?}", hir_id, compartments); }
         self.typeck_results
             .borrow_mut()
             .node_compartments_mut()
@@ -239,11 +239,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let attrs = self.tcx.hir_attrs(owner_id);
 
         if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
-            eprintln!("owner_compartments found: {:?}", comps);
+            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("owner_compartments found: {:?}", comps); }
             return comps.iter().map(|(sym, _span)| *sym).collect();
         }
 
-        eprintln!("owner_compartments: none found, returning empty");
+        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("owner_compartments: none found, returning empty"); }
         Vec::new()
     }
 
@@ -253,29 +253,26 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let attrs = self.tcx.hir_attrs(hir_id);
         if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
             let result = comps.iter().map(|(sym, _span)| *sym).collect();
-            eprintln!("infer_compartments({:?}): explicit attribute -> {:?}", hir_id, result);
+            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): explicit attribute -> {:?}", hir_id, result); }
+
             return result;
         }
 
         // 2. Inherit from owner (function, const, etc.)
         let owner_comps = self.owner_compartments();
         if !owner_comps.is_empty() {
-            eprintln!(
-                "infer_compartments({:?}): inherited from owner -> {:?}",
-                hir_id,
-                owner_comps
-            );
+            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): inherited from owner -> {:?}", hir_id, owner_comps); }
             return owner_comps;
         }
 
         // 3. Default: no compartments
-        eprintln!("infer_compartments({:?}): default (empty)", hir_id);
+        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): default (empty)", hir_id); }
         Vec::new()
     }
 
     /// Check that two compartment lists match
     pub(crate) fn check_compartments_eq(&self, span: Span, expected: &[Symbol], actual: &[Symbol]) {
-        eprintln!("check_compartments_eq: expected {:?}, actual {:?}", expected, actual);
+        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("check_compartments_eq: expected {:?}, actual {:?}", expected, actual); }
         if expected != actual {
             let expected_str = expected.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ");
             let actual_str = actual.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ");
@@ -286,6 +283,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 actual: actual_str,
             });
         }
+    }
+
+    /// Get compartments from function definition
+    #[allow(dead_code)]
+    pub(crate) fn get_callee_compartments(&self, def_id: DefId) -> Vec<Symbol> {
+        let hir_id = self.tcx.local_def_id_to_hir_id(def_id.expect_local());
+        self.infer_compartments(hir_id)
+    }
+
+    /// Get compartments from item (struct, field) definition
+    /// I have been having trouble with this.
+    /// It returns empty compartments to avoid panics when infer_compartments is called on non-expression nodes
+    #[allow(dead_code)]
+    pub(crate) fn get_item_compartments(&self, _def_id: DefId) -> Vec<Symbol> {
+        // TODO: Properly retrieve and check compartments on struct/field definitions
+        // For now, return empty to shutup the compiler
+        Vec::new()
     }
 }
 

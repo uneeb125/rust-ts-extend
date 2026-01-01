@@ -411,7 +411,7 @@ impl<'tcx> TypeckResults<'tcx> {
 
     pub fn node_compartments(&self, id: HirId) -> &[Symbol] {
         let result = self.node_compartments_opt(id).unwrap_or(&[]);
-        eprintln!("node_compartments for {:?}: {:?}", id, result);
+        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("node_compartments for {:?}: {:?}", id, result); }
         result
     }
 

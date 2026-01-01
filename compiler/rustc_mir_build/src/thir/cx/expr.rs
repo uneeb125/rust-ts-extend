@@ -208,7 +208,12 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     variant_index: FIRST_VARIANT,
                     name: FieldIdx::ZERO,
                 };
-                let arg = Expr { temp_lifetime, ty: pin_ty, compartments: &[], span, kind: pointer_target };
+
+
+                // Get compartments from TypeckResults
+                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
+                let arg = Expr { temp_lifetime, ty: pin_ty, compartments, span, kind: pointer_target };
                 let arg = self.thir.exprs.push(arg);
 
                 // arg = *pointer
@@ -261,7 +266,10 @@ impl<'tcx> ThirBuildCx<'tcx> {
             }
         };
 
-        Expr { temp_lifetime, ty: adjustment.target, compartments: &[], span, kind }
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
+        Expr { temp_lifetime, ty: adjustment.target, compartments, span, kind }
     }
 
     /// Lowers a cast expression.
@@ -328,7 +336,11 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 );
             }
             let kind = ExprKind::NonHirLiteral { lit, user_ty: None };
-            let offset = self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind });
+
+            // Get compartments from TypeckResults
+            let compartments = self.typeck_results.node_compartments(source.hir_id);
+
+            let offset = self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments, span, kind });
 
             let source = match discr_did {
                 // in case we are offsetting from a computed discriminant
@@ -336,9 +348,9 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 Some(did) => {
                     let kind = ExprKind::NamedConst { def_id: did, args, user_ty: None };
                     let lhs =
-                        self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind });
+                        self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments, span, kind });
                     let bin = ExprKind::Binary { op: BinOp::Add, lhs, rhs: offset };
-                    self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments: &[], span, kind: bin })
+                    self.thir.exprs.push(Expr { temp_lifetime, ty: discr_ty, compartments, span, kind: bin })
                 }
                 None => offset,
             };
@@ -355,6 +367,8 @@ impl<'tcx> ThirBuildCx<'tcx> {
     fn make_mirror_unadjusted(&mut self, expr: &'tcx hir::Expr<'tcx>) -> Expr<'tcx> {
         let tcx = self.tcx;
         let expr_ty = self.typeck_results.expr_ty(expr);
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(expr.hir_id);
         let (temp_lifetime, backwards_incompatible) =
             self.rvalue_scopes.temporary_scope(self.region_scope_tree, expr.hir_id.local_id);
 
@@ -391,7 +405,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     let arg_tys = args.iter().map(|e| self.typeck_results.expr_ty_adjusted(e));
                     let tupled_args = Expr {
                         ty: Ty::new_tup_from_iter(tcx, arg_tys),
-                        compartments: &[],
+                        compartments,
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: expr.span,
                         kind: ExprKind::Tuple { fields: self.mirror_exprs(args) },
@@ -417,9 +431,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         );
                     }
                     let value = &args[0];
-
-                    // Get compartments from TypeckResults
-                    let compartments = self.typeck_results.node_compartments(expr.hir_id);
 
                     return Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
@@ -543,10 +554,11 @@ impl<'tcx> ThirBuildCx<'tcx> {
                             kind: ExprKind::Block { block },
                         });
                     }
+
                     let expr = self.thir.exprs.push(Expr {
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         ty,
-                        compartments: &[],
+                        compartments,
                         span: expr.span,
                         kind: ExprKind::Borrow { borrow_kind: mutbl.to_borrow_kind(), arg },
                     });
@@ -1032,9 +1044,10 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         .rvalue_scopes
                         .temporary_scope(self.region_scope_tree, body.hir_id.local_id);
                     let block = self.mirror_block(body);
+
                     let body = self.thir.exprs.push(Expr {
                         ty: block_ty,
-                        compartments: &[],
+                        compartments,
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: self.thir[block].span,
                         kind: ExprKind::Block { block },
@@ -1201,10 +1214,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 )
             }
         };
+
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
         Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty,
-            compartments: &[],
+            compartments,
             span,
             kind: ExprKind::ZstLiteral { user_ty },
         }
@@ -1224,6 +1241,10 @@ impl<'tcx> ThirBuildCx<'tcx> {
 
     fn convert_path_expr(&mut self, expr: &'tcx hir::Expr<'tcx>, res: Res) -> ExprKind<'tcx> {
         let args = self.typeck_results.node_args(expr.hir_id);
+
+        // Get compartments from TypeckResults
+        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+
         match res {
             // A regular function, constructor function or a constant.
             Res::Def(DefKind::Fn, _)
@@ -1292,7 +1313,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 ExprKind::Deref {
                     arg: self.thir.exprs.push(Expr {
                         ty,
-                        compartments: &[],
+                        compartments,
                         temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
                         span: expr.span,
                         kind,
