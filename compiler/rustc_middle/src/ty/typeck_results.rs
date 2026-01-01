@@ -410,9 +410,7 @@ impl<'tcx> TypeckResults<'tcx> {
     }
 
     pub fn node_compartments(&self, id: HirId) -> &[Symbol] {
-        let result = self.node_compartments_opt(id).unwrap_or(&[]);
-        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("node_compartments for {:?}: {:?}", id, result); }
-        result
+        self.node_compartments_opt(id).unwrap_or(&[])
     }
 
     pub fn node_compartments_opt(&self, id: HirId) -> Option<&[Symbol]> {

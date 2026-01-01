@@ -323,8 +323,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Record the type, which applies it effects.
         // We need to do this after the warning above, so that
-        // we don't warn for the diverging expression itself.
+        // we don't warn for diverging expression itself.
         self.write_ty(expr.hir_id, ty);
+
+        // Infer and set compartments for this expression
+        let compartments = self.infer_compartments(expr.hir_id);
+        self.write_compartments(expr.hir_id, &compartments);
 
         // Combine the diverging and has_error flags.
         self.diverges.set(self.diverges.get() | old_diverges);

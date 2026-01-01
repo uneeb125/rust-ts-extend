@@ -225,7 +225,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Write compartments for a HIR node
     /// Converts &[Symbol] to Vec<Symbol> for storage in TypeckResults
     pub(crate) fn write_compartments(&self, hir_id: HirId, compartments: &[Symbol]) {
-        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("write_compartments: {:?} -> {:?}", hir_id, compartments); }
         self.typeck_results
             .borrow_mut()
             .node_compartments_mut()
@@ -239,11 +238,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let attrs = self.tcx.hir_attrs(owner_id);
 
         if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
-            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("owner_compartments found: {:?}", comps); }
             return comps.iter().map(|(sym, _span)| *sym).collect();
         }
 
-        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("owner_compartments: none found, returning empty"); }
         Vec::new()
     }
 
@@ -252,21 +249,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // 1. Check for explicit compartments attribute on this node
         let attrs = self.tcx.hir_attrs(hir_id);
         if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
-            let result = comps.iter().map(|(sym, _span)| *sym).collect();
-            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): explicit attribute -> {:?}", hir_id, result); }
-
-            return result;
+            return comps.iter().map(|(sym, _span)| *sym).collect();
         }
 
         // 2. Inherit from owner (function, const, etc.)
         let owner_comps = self.owner_compartments();
         if !owner_comps.is_empty() {
-            if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): inherited from owner -> {:?}", hir_id, owner_comps); }
             return owner_comps;
         }
 
         // 3. Default: no compartments
-        if std::env::var("MY_DEBUG_CALL").is_ok() { println!("infer_compartments({:?}): default (empty)", hir_id); }
         Vec::new()
     }
 
