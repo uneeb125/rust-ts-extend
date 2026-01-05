@@ -677,7 +677,7 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
     }
 
     fn print_pat(&mut self, pat: &Pat<'tcx>, depth_lvl: usize) {
-        let &Pat { ty, span, ref kind } = pat;
+        let &Pat { ty, compartments: _, span, ref kind } = pat;
 
         print_indented!(self, "Pat: {", depth_lvl);
         print_indented!(self, format!("ty: {:?}", ty), depth_lvl + 1);

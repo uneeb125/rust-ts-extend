@@ -260,7 +260,7 @@ pub(crate) fn for_each_immediate_subpat<'a, 'tcx>(
     pat: &'a Pat<'tcx>,
     mut callback: impl FnMut(&'a Pat<'tcx>),
 ) {
-    let Pat { kind, ty: _, span: _ } = pat;
+    let Pat { kind, ty: _, span: _, compartments: _ } = pat;
     match kind {
         PatKind::Missing
         | PatKind::Wild

@@ -90,7 +90,7 @@ impl<'tcx> ConstToPat<'tcx> {
                 );
             }
         }
-        Box::new(Pat { span: self.span, ty, kind: PatKind::Error(err.emit()) })
+        Box::new(Pat { span: self.span, ty, compartments: &[], kind: PatKind::Error(err.emit()) })
     }
 
     fn unevaluated_to_pat(
@@ -189,7 +189,7 @@ impl<'tcx> ConstToPat<'tcx> {
         // Wrap the pattern in a marker node to indicate that it is the result of lowering a
         // constant. This is used for diagnostics, and for unsafety checking of inline const blocks.
         let kind = PatKind::ExpandedConstant { subpattern: inlined_const_as_pat, def_id: uv.def };
-        Box::new(Pat { kind, ty, span: self.span })
+        Box::new(Pat { kind, ty, compartments: &[], span: self.span })
     }
 
     fn field_pats(
@@ -347,7 +347,7 @@ impl<'tcx> ConstToPat<'tcx> {
             }
         };
 
-        Box::new(Pat { span, ty, kind })
+        Box::new(Pat { span, ty, compartments: &[], kind })
     }
 }
 

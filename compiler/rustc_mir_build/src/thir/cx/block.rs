@@ -88,6 +88,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                             };
                             pattern = Box::new(Pat {
                                 ty: pattern.ty,
+                                compartments: &[],
                                 span: pattern.span,
                                 kind: PatKind::AscribeUserType {
                                     ascription: Ascription { annotation, variance: ty::Covariant },
