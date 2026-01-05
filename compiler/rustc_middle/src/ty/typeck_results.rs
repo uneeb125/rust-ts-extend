@@ -50,7 +50,7 @@ pub struct TypeckResults<'tcx> {
     /// Stores the comparments for various nodes in the AST. Note that this table
     /// is not guaranteed to be populated outside inference. See
     /// typeck::check::fn_ctxt for details.
-    node_compartments: ItemLocalMap<Vec<Symbol>>,
+    pub node_compartments: ItemLocalMap<Vec<Symbol>>,
 
     /// Stores the type parameters which were instantiated to obtain the type
     /// of this node. This only applies to nodes that refer to entities

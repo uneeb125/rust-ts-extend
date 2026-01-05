@@ -70,9 +70,12 @@ impl<'tcx> ThirBuildCx<'tcx> {
         trace!(?expr.ty, "after adjustments");
 
         // Finally, wrap this up in the expr's scope.
-
         // Get compartments from TypeckResults
         let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
+
+        if std::env::var("MY_DEBUG_THIR").is_ok() {
+            println!("THIR: TypeckResults ptr={:p}", &*self.typeck_results as *const _);
+        }
 
         expr = Expr {
             temp_lifetime: expr.temp_lifetime,
@@ -85,6 +88,10 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 lint_level: LintLevel::Explicit(hir_expr.hir_id),
             },
         };
+
+        if std::env::var("MY_DEBUG_THIR").is_ok() {
+            println!("THIR: Created Expr with compartments: {:?}", compartments);
+        }
 
         // OK, all done!
         self.thir.exprs.push(expr)

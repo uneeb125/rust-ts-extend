@@ -225,6 +225,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Write compartments for a HIR node
     /// Converts &[Symbol] to Vec<Symbol> for storage in TypeckResults
     pub(crate) fn write_compartments(&self, hir_id: HirId, compartments: &[Symbol]) {
+        if std::env::var("MY_DEBUG_THIR").is_ok() {
+            println!("WRITE: compartments for {:?} -> {:?}", hir_id, compartments);
+        }
         self.typeck_results
             .borrow_mut()
             .node_compartments_mut()

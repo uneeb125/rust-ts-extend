@@ -87,6 +87,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         debug!("used_trait_imports({:?}) = {:?}", item_def_id, used_trait_imports);
         wbcx.typeck_results.used_trait_imports = used_trait_imports;
 
+        let node_compartments =
+            mem::take(&mut self.typeck_results.borrow_mut().node_compartments);
+        debug!("node_compartments({:?}) = {:?}", item_def_id, node_compartments);
+        wbcx.typeck_results.node_compartments = node_compartments;
+
         debug!("writeback: typeck results for {:?} are {:#?}", item_def_id, wbcx.typeck_results);
 
         self.tcx.arena.alloc(wbcx.typeck_results)
