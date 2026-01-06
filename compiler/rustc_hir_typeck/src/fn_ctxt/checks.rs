@@ -876,6 +876,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);
         }
 
+        // Check compartment compatibility for declaration
+        {
+            let typeck_results = self.typeck_results.borrow();
+            let pat_compartments = typeck_results.pat_compartments(decl.pat);
+            let init_compartments = if let Some(init) = decl.init {
+                typeck_results.expr_compartments(init)
+            } else {
+                &[]
+            };
+            self.check_compartments_eq(decl.pat.span, pat_compartments, init_compartments);
+        }
+
         // Does the expected pattern type originate from an expression and what is the span?
         let (origin_expr, ty_span) = match (decl.ty, decl.init) {
             (Some(ty), _) => (None, Some(ty.span)), // Bias towards the explicit user type.

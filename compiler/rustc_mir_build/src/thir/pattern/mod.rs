@@ -105,6 +105,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             _ => self.lower_pattern_unadjusted(pat),
         };
 
+        let compartments = unadjusted_pat.compartments;
         let adjusted_pat = adjustments.iter().rev().fold(unadjusted_pat, |thir_pat, adjust| {
             debug!("{:?}: wrapping pattern with adjustment {:?}", thir_pat, adjust);
             let span = thir_pat.span;
@@ -115,7 +116,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                     PatKind::DerefPattern { subpattern: thir_pat, borrow }
                 }
             };
-            Box::new(Pat { span, ty: adjust.source, compartments: &[], kind })
+            Box::new(Pat { span, ty: adjust.source, compartments, kind })
         });
 
         if let Some(s) = &mut self.rust_2024_migration
@@ -289,6 +290,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
     fn lower_pattern_unadjusted(&mut self, pat: &'tcx hir::Pat<'tcx>) -> Box<Pat<'tcx>> {
         let mut ty = self.typeck_results.node_type(pat.hir_id);
         let mut span = pat.span;
+        let compartments = self.tcx.arena.alloc_slice(self.typeck_results.pat_compartments(pat));
 
         let kind = match pat.kind {
             hir::PatKind::Missing => PatKind::Missing,
@@ -408,7 +410,7 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             hir::PatKind::Err(guar) => PatKind::Error(guar),
         };
 
-        Box::new(Pat { span, ty, compartments: &[], kind })
+        Box::new(Pat { span, ty, compartments, kind })
     }
 
     fn lower_tuple_subpats(
