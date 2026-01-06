@@ -1152,7 +1152,12 @@ impl<'tcx> ThirBuildCx<'tcx> {
         };
 
         // Get compartments from TypeckResults
-        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+        let compartments = match &kind {
+            // For NamedConst, get compartments from the constant's definition, not from the usage site
+            ExprKind::NamedConst { def_id, .. } => self.def_id_compartments(*def_id),
+            // For all other expressions, get from the usage site
+            _ => self.typeck_results.node_compartments(expr.hir_id),
+        };
 
         Expr {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
@@ -1249,8 +1254,12 @@ impl<'tcx> ThirBuildCx<'tcx> {
     fn convert_path_expr(&mut self, expr: &'tcx hir::Expr<'tcx>, res: Res) -> ExprKind<'tcx> {
         let args = self.typeck_results.node_args(expr.hir_id);
 
-        // Get compartments from TypeckResults
-        let compartments = self.typeck_results.node_compartments(expr.hir_id);
+        // 1. Determine the correct compartments based on the resolution type
+        let compartments = if let Res::Def(DefKind::Static { .. }, id) = res {
+            self.def_id_compartments(id)
+        } else {
+            self.typeck_results.node_compartments(expr.hir_id)
+        };
 
         match res {
             // A regular function, constructor function or a constant.

@@ -13,6 +13,7 @@ use rustc_middle::bug;
 use rustc_middle::middle::region;
 use rustc_middle::thir::*;
 use rustc_middle::ty::{self, RvalueScopes, TyCtxt};
+use rustc_span::Symbol;
 use tracing::instrument;
 
 use crate::thir::pattern::pat_from_hir;
@@ -199,6 +200,19 @@ impl<'tcx> ThirBuildCx<'tcx> {
             let pat = self.pattern_from_hir(param.pat);
             Param { pat: Some(pat), ty, ty_span, self_kind, hir_id: Some(param.hir_id) }
         })
+    }
+
+    #[allow(dead_code)]
+    fn def_id_compartments(&self, def_id: DefId) -> &'tcx [Symbol] {
+        if let Some(local_def_id) = def_id.as_local() {
+            let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+            let attrs = self.tcx.hir_attrs(hir_id);
+            if let Some(comps) = find_attr!(attrs, AttributeKind::Compartments(comps) => comps) {
+                let syms: Vec<Symbol> = comps.iter().map(|(sym, _span)| *sym).collect();
+                return self.tcx.arena.alloc_slice(&syms);
+            }
+        }
+        &[]
     }
 
     fn user_args_applied_to_ty_of_hir_id(
