@@ -69,9 +69,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
 
         trace!(?expr.ty, "after adjustments");
 
-        // Finally, wrap this up in the expr's scope.
-        // Get compartments from TypeckResults
-        let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
 
         if std::env::var("MY_DEBUG_THIR").is_ok() {
             println!("THIR: TypeckResults ptr={:p}", &*self.typeck_results as *const _);
@@ -80,7 +77,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         expr = Expr {
             temp_lifetime: expr.temp_lifetime,
             ty: expr.ty,
-            compartments,
+            compartments: expr.compartments,
             span: hir_expr.span,
             kind: ExprKind::Scope {
                 region_scope: expr_scope,
@@ -90,7 +87,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         };
 
         if std::env::var("MY_DEBUG_THIR").is_ok() {
-            println!("THIR: Created Expr with compartments: {:?}", compartments);
+            println!("THIR: Created Expr with compartments: {:?}", expr.compartments);
         }
 
         // OK, all done!
@@ -105,7 +102,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
         adjustment: &Adjustment<'tcx>,
         mut span: Span,
     ) -> Expr<'tcx> {
-        let Expr { temp_lifetime, .. } = expr;
+        let Expr { temp_lifetime, compartments, .. } = expr;
 
         // Adjust the span from the block, to the last expression of the
         // block. This is a better span when returning a mutable reference
@@ -163,9 +160,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 let overloaded_callee =
                     Ty::new_fn_def(self.tcx, call_def_id, self.tcx.mk_args(&[expr.ty.into()]));
 
-                // Get compartments from TypeckResults
-                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
-
                 expr = Expr {
                     temp_lifetime,
                     ty: Ty::new_ref(self.tcx, self.tcx.lifetimes.re_erased, expr.ty, deref.mutbl),
@@ -217,17 +211,11 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 };
 
 
-                // Get compartments from TypeckResults
-                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
-
                 let arg = Expr { temp_lifetime, ty: pin_ty, compartments, span, kind: pointer_target };
                 let arg = self.thir.exprs.push(arg);
 
                 // arg = *pointer
                 let expr = ExprKind::Deref { arg };
-
-                // Get compartments from TypeckResults
-                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
 
                 let arg = self.thir.exprs.push(Expr {
                     temp_lifetime,
@@ -244,9 +232,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 };
                 let new_pin_target =
                     Ty::new_ref(self.tcx, self.tcx.lifetimes.re_erased, ptr_target_ty, mutbl);
-
-                // Get compartments from TypeckResults
-                let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
 
                 let expr = self.thir.exprs.push(Expr {
                     temp_lifetime,
@@ -272,9 +257,6 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 kind
             }
         };
-
-        // Get compartments from TypeckResults
-        let compartments = self.typeck_results.node_compartments(hir_expr.hir_id);
 
         Expr { temp_lifetime, ty: adjustment.target, compartments, span, kind }
     }
