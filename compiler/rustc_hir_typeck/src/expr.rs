@@ -28,6 +28,7 @@ use rustc_middle::ty::adjustment::{Adjust, Adjustment, AllowTwoPhase};
 use rustc_middle::ty::error::{ExpectedFound, TypeError};
 use rustc_middle::ty::{self, AdtKind, GenericArgsRef, Ty, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_session::errors::ExprParenthesesNeeded;
 use rustc_session::parse::feature_err;
 use rustc_span::edit_distance::find_best_match_for_name;
@@ -1467,6 +1468,47 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         });
 
         self.require_type_is_sized(lhs_ty, lhs.span, ObligationCauseCode::AssignmentLhsSized);
+
+        // =====================================================================
+        // START: Compartment System Enforcement
+        // =====================================================================
+        // Only run checking if types are generally sane to avoid cascading errors
+        if !lhs_ty.references_error() && !rhs_ty.references_error() {
+            let get_compartment = |expr: &hir::Expr<'tcx>| -> CompartmentSet {
+                if let hir::ExprKind::Path(qpath) = &expr.kind {
+                    let res = self.typeck_results.borrow().qpath_res(qpath, expr.hir_id);
+                    if let Some(def_id) = res.opt_def_id() {
+                        return self.tcx.compartment_set(def_id).clone();
+                    }
+                }
+                CompartmentSet::empty()
+            };
+
+            let lhs_set = get_compartment(lhs);
+            let rhs_set = get_compartment(rhs);
+
+            if std::env::var("TYPECK_EXPR").is_ok() {
+                    println!("Compartments for lhs {:?} and rhs {:?}", lhs_set, rhs_set);
+                }
+
+            // Rule: You cannot move data from a stricter compartment (RHS) to a looser one (LHS).
+            // RHS must be a SUBSET of LHS.
+            if !rhs_set.is_subset(&lhs_set) {
+                let mut err = self.tcx.dcx().struct_span_err(
+                    span,
+                    "compartment violation: cannot assign incompatible compartments",
+                );
+
+                err.note(format!("Destination (LHS) compartments: {:?}", lhs_set.tags));
+                err.note(format!("Source (RHS) compartments:      {:?}", rhs_set.tags));
+                err.help("The source contains compartments not allowed in the destination.");
+
+                err.emit();
+            }
+        }
+        // =====================================================================
+        // END: Compartment System Enforcement
+        // =====================================================================
 
         if let Err(guar) = (lhs_ty, rhs_ty).error_reported() {
             Ty::new_error(self.tcx, guar)
