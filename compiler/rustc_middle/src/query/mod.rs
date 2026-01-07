@@ -163,7 +163,13 @@ pub mod plumbing;
 // Queries marked with `fatal_cycle` do not need the latter implementation,
 // as they will raise an fatal error on query cycles instead.
 rustc_queries! {
-    /// This exists purely for testing the interactions between delayed bugs and incremental.
+
+    /// Query to get CompartmentSet
+    query compartment_set(def_id: DefId) -> &'tcx crate::compartments::CompartmentSet {
+        desc { "computing compartment set for `{:?}`", def_id }
+        arena_cache
+    }
+
     query trigger_delayed_bug(key: DefId) {
         desc { "triggering a delayed bug for testing incremental" }
     }

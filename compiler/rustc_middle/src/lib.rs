@@ -72,6 +72,7 @@ mod macros;
 
 #[macro_use]
 pub mod arena;
+pub mod compartments;
 pub mod error;
 pub mod hir;
 pub mod hooks;
