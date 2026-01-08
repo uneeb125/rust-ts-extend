@@ -18,6 +18,7 @@ use rustc_session::Session;
 use rustc_span::Span;
 
 use super::RvalueScopes;
+use crate::compartments::CompartmentSet;
 use crate::hir::place::Place as HirPlace;
 use crate::infer::canonical::Canonical;
 use crate::mir::FakeReadCause;
@@ -227,6 +228,9 @@ pub struct TypeckResults<'tcx> {
 
     /// Container types and field indices of `offset_of!` expressions
     offset_of_data: ItemLocalMap<(Ty<'tcx>, Vec<(VariantIdx, FieldIdx)>)>,
+
+    /// Compartment sets for each HIR node
+    node_compartments: ItemLocalMap<CompartmentSet>,
 }
 
 impl<'tcx> TypeckResults<'tcx> {
@@ -259,6 +263,7 @@ impl<'tcx> TypeckResults<'tcx> {
             closure_size_eval: Default::default(),
             transmutes_to_check: Default::default(),
             offset_of_data: Default::default(),
+            node_compartments: Default::default(),
         }
     }
 
@@ -350,6 +355,19 @@ impl<'tcx> TypeckResults<'tcx> {
     pub fn node_args_opt(&self, id: HirId) -> Option<GenericArgsRef<'tcx>> {
         validate_hir_id_for_typeck_results(self.hir_owner, id);
         self.node_args.get(&id.local_id).cloned()
+    }
+
+    pub fn node_compartments(&self) -> LocalTableInContext<'_, CompartmentSet> {
+        LocalTableInContext { hir_owner: self.hir_owner, data: &self.node_compartments }
+    }
+
+    pub fn node_compartments_mut(&mut self) -> LocalTableInContextMut<'_, CompartmentSet> {
+        LocalTableInContextMut { hir_owner: self.hir_owner, data: &mut self.node_compartments }
+    }
+
+    pub fn node_compartment(&self, id: HirId) -> Option<&CompartmentSet> {
+        validate_hir_id_for_typeck_results(self.hir_owner, id);
+        self.node_compartments.get(&id.local_id)
     }
 
     /// Returns the type of a pattern as a monotype. Like [`expr_ty`], this function

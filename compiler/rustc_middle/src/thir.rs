@@ -260,8 +260,11 @@ pub struct Expr<'tcx> {
     /// temporary
     pub temp_lifetime: TempLifetime,
 
-    /// span of the expression in the source
+    /// span of expression in the source
     pub span: Span,
+
+    /// Compartment set for this expression
+    pub compartment: crate::compartments::CompartmentSet,
 }
 
 /// Temporary lifetime information for THIR expressions
@@ -663,6 +666,7 @@ pub struct Pat<'tcx> {
     pub ty: Ty<'tcx>,
     pub span: Span,
     pub kind: PatKind<'tcx>,
+    pub compartment: crate::compartments::CompartmentSet,
 }
 
 impl<'tcx> Pat<'tcx> {
@@ -1127,9 +1131,9 @@ mod size_asserts {
     use super::*;
     // tidy-alphabetical-start
     static_assert_size!(Block, 48);
-    static_assert_size!(Expr<'_>, 72);
+    static_assert_size!(Expr<'_>, 88);
     static_assert_size!(ExprKind<'_>, 40);
-    static_assert_size!(Pat<'_>, 64);
+    static_assert_size!(Pat<'_>, 80);
     static_assert_size!(PatKind<'_>, 48);
     static_assert_size!(Stmt<'_>, 48);
     static_assert_size!(StmtKind<'_>, 48);
