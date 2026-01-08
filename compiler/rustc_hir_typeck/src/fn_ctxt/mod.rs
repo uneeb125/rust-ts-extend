@@ -206,6 +206,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let current = self.current_compartment();
         let target = self.tcx.compartment_set(target_def).clone();
 
+        if std::env::var("MY_DEBUG_TYPECK").is_ok() {
+            println!(
+                "DEBUG: check_compartment_access: current={:?}, target={:?}, can_access={}, target_def={:?}",
+                current.tags,
+                target.tags,
+                current.can_access(&target),
+                target_def
+            );
+        }
+
         if !current.can_access(&target) {
             let err = self.tcx.dcx().struct_span_err(
                 span,

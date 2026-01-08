@@ -1143,11 +1143,20 @@ impl<'tcx> ThirBuildCx<'tcx> {
             temp_lifetime: TempLifetime { temp_lifetime, backwards_incompatible },
             ty: expr_ty,
             span: expr.span,
-            compartment: self
-                .typeck_results
-                .node_compartment(expr.hir_id)
-                .cloned()
-                .unwrap_or_else(CompartmentSet::empty),
+            compartment: {
+                let compartment = self
+                    .typeck_results
+                    .node_compartment(expr.hir_id)
+                    .cloned()
+                    .unwrap_or_else(CompartmentSet::empty);
+                if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                    println!(
+                        "DEBUG: THIR Expr {:?} gets compartments {:?}",
+                        expr.hir_id, compartment.tags
+                    );
+                }
+                compartment
+            },
             kind,
         }
     }

@@ -119,11 +119,20 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             Box::new(Pat {
                 span,
                 ty: adjust.source,
-                compartment: self
-                    .typeck_results
-                    .node_compartment(pat.hir_id)
-                    .cloned()
-                    .unwrap_or_else(CompartmentSet::empty),
+                compartment: {
+                    let compartment = self
+                        .typeck_results
+                        .node_compartment(pat.hir_id)
+                        .cloned()
+                        .unwrap_or_else(CompartmentSet::empty);
+                    if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                        println!(
+                            "DEBUG: THIR Pat {:?} gets compartments {:?}",
+                            pat.hir_id, compartment.tags
+                        );
+                    }
+                    compartment
+                },
                 kind,
             })
         });
@@ -421,11 +430,20 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         Box::new(Pat {
             span,
             ty,
-            compartment: self
-                .typeck_results
-                .node_compartment(pat.hir_id)
-                .cloned()
-                .unwrap_or_else(CompartmentSet::empty),
+            compartment: {
+                let compartment = self
+                    .typeck_results
+                    .node_compartment(pat.hir_id)
+                    .cloned()
+                    .unwrap_or_else(CompartmentSet::empty);
+                if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                    println!(
+                        "DEBUG: THIR Pat {:?} gets compartments {:?}",
+                        pat.hir_id, compartment.tags
+                    );
+                }
+                compartment
+            },
             kind,
         })
     }
@@ -557,11 +575,20 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 subpattern: Box::new(Pat {
                     span,
                     ty,
-                    compartment: self
-                        .typeck_results
-                        .node_compartment(hir_id)
-                        .cloned()
-                        .unwrap_or_else(CompartmentSet::empty),
+                    compartment: {
+                        let compartment = self
+                            .typeck_results
+                            .node_compartment(hir_id)
+                            .cloned()
+                            .unwrap_or_else(CompartmentSet::empty);
+                        if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                            println!(
+                                "DEBUG: THIR Pat {:?} gets compartments {:?}",
+                                hir_id, compartment.tags
+                            );
+                        }
+                        compartment
+                    },
                     kind,
                 }),
                 ascription: Ascription { annotation, variance: ty::Covariant },
@@ -598,11 +625,20 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 return Box::new(Pat {
                     span,
                     ty,
-                    compartment: self
-                        .typeck_results
-                        .node_compartment(id)
-                        .cloned()
-                        .unwrap_or_else(CompartmentSet::empty),
+                    compartment: {
+                        let compartment = self
+                            .typeck_results
+                            .node_compartment(id)
+                            .cloned()
+                            .unwrap_or_else(CompartmentSet::empty);
+                        if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                            println!(
+                                "DEBUG: THIR Pat {:?} gets compartments {:?}",
+                                id, compartment.tags
+                            );
+                        }
+                        compartment
+                    },
                     kind,
                 });
             }
@@ -636,11 +672,20 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 span,
                 kind,
                 ty,
-                compartment: self
-                    .typeck_results
-                    .node_compartment(id)
-                    .cloned()
-                    .unwrap_or_else(CompartmentSet::empty),
+                compartment: {
+                    let compartment = self
+                        .typeck_results
+                        .node_compartment(id)
+                        .cloned()
+                        .unwrap_or_else(CompartmentSet::empty);
+                    if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
+                        println!(
+                            "DEBUG: THIR Pat {:?} gets compartments {:?}",
+                            id, compartment.tags
+                        );
+                    }
+                    compartment
+                },
             });
         }
 
