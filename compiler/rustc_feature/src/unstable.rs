@@ -410,6 +410,8 @@ declare_features! (
     (unstable, avx10_target_feature, "1.88.0", Some(138843)),
     /// Allows using C-variadics.
     (unstable, c_variadic, "1.34.0", Some(44930)),
+    /// Allows compartment-based security model.
+    (unstable, compartments, "1.0.0", None),
     /// Allows the use of `#[cfg(contract_checks)` to check if contract checks are enabled.
     (unstable, cfg_contract_checks, "1.86.0", Some(128044)),
     /// Allows the use of `#[cfg(overflow_checks)` to check if integer overflow behaviour.
