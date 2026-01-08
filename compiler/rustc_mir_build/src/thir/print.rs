@@ -183,7 +183,7 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
     }
 
     fn print_expr(&mut self, expr: ExprId, depth_lvl: usize) {
-        let Expr { ty, temp_lifetime, span, kind } = &self.thir[expr];
+        let Expr { ty, temp_lifetime, span, kind, compartment: _ } = &self.thir[expr];
         print_indented!(self, "Expr {", depth_lvl);
         print_indented!(self, format!("ty: {:?}", ty), depth_lvl + 1);
         print_indented!(self, format!("temp_lifetime: {:?}", temp_lifetime), depth_lvl + 1);
@@ -676,7 +676,7 @@ impl<'a, 'tcx> ThirPrinter<'a, 'tcx> {
     }
 
     fn print_pat(&mut self, pat: &Pat<'tcx>, depth_lvl: usize) {
-        let &Pat { ty, span, ref kind } = pat;
+        let &Pat { ty, span, ref kind, compartment: _ } = pat;
 
         print_indented!(self, "Pat: {", depth_lvl);
         print_indented!(self, format!("ty: {:?}", ty), depth_lvl + 1);

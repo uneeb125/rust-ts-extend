@@ -1,5 +1,6 @@
 use rustc_hir as hir;
 use rustc_index::Idx;
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::middle::region;
 use rustc_middle::thir::*;
 use rustc_middle::ty;
@@ -93,6 +94,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                                     ascription: Ascription { annotation, variance: ty::Covariant },
                                     subpattern: pattern,
                                 },
+                                compartment: CompartmentSet::empty(),
                             });
                         }
 

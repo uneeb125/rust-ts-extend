@@ -1156,3 +1156,11 @@ pub(crate) struct ConstContinueBadLabel {
     #[primary_span]
     pub span: Span,
 }
+
+#[derive(Diagnostic)]
+#[diag(hir_typeck_unsafe_pointer_cast)]
+pub(crate) struct UnsafePointerCastError {
+    #[primary_span]
+    pub span: Span,
+    pub note: String,
+}

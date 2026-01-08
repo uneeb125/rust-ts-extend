@@ -303,3 +303,6 @@ hir_typeck_use_is_empty =
 
 hir_typeck_yield_expr_outside_of_coroutine =
     yield expression outside of coroutine literal
+
+hir_typeck_unsafe_pointer_cast =
+    unsafe pointer cast: {$note}

@@ -52,6 +52,7 @@ use crate::hir_ty_lowering::{
     FeedConstTy, HirTyLowerer, InherentAssocCandidate, RegionInferReason,
 };
 
+mod compartments;
 pub(crate) mod dump;
 mod generics_of;
 mod item_bounds;
@@ -96,6 +97,7 @@ pub(crate) fn provide(providers: &mut Providers) {
         rendered_precise_capturing_args,
         const_param_default,
         anon_const_kind,
+        compartment_set: compartments::compartment_set,
         ..*providers
     };
 }

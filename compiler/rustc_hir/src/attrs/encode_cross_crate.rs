@@ -28,6 +28,7 @@ impl AttributeKind {
             BodyStability { .. } => No,
             Coinductive(..) => No,
             Cold(..) => No,
+            Compartments(..) => Yes,
             Confusables { .. } => Yes,
             ConstContinue(..) => No,
             ConstStability { .. } => Yes,

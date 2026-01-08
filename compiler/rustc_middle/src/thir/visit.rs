@@ -45,7 +45,7 @@ pub fn walk_expr<'thir, 'tcx: 'thir, V: Visitor<'thir, 'tcx>>(
     expr: &'thir Expr<'tcx>,
 ) {
     use ExprKind::*;
-    let Expr { kind, ty: _, temp_lifetime: _, span: _ } = expr;
+    let Expr { kind, ty: _, temp_lifetime: _, span: _, compartment: _ } = expr;
     match *kind {
         Scope { value, region_scope: _, lint_level: _ } => {
             visitor.visit_expr(&visitor.thir()[value])
@@ -260,7 +260,7 @@ pub(crate) fn for_each_immediate_subpat<'a, 'tcx>(
     pat: &'a Pat<'tcx>,
     mut callback: impl FnMut(&'a Pat<'tcx>),
 ) {
-    let Pat { kind, ty: _, span: _ } = pat;
+    let Pat { kind, ty: _, span: _, compartment: _ } = pat;
     match kind {
         PatKind::Missing
         | PatKind::Wild

@@ -469,6 +469,9 @@ pub enum AttributeKind {
     /// Represents `#[cold]`.
     Cold(Span),
 
+    /// Represents `#[compartments(...)]`.
+    Compartments(ThinVec<(Symbol, Span)>, Span),
+
     /// Represents `#[rustc_confusables]`.
     Confusables {
         symbols: ThinVec<Symbol>,

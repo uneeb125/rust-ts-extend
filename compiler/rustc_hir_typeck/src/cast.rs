@@ -1059,7 +1059,29 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         // ptr-addr cast. pointer must be thin.
         match fcx.pointer_kind(m_cast.ty, self.span)? {
             None => Err(CastError::UnknownCastPtrKind),
-            Some(PointerKind::Thin) => Ok(CastKind::AddrPtrCast),
+            Some(PointerKind::Thin) => {
+                // Check integer size vs pointee size for safety
+                if let ty::Uint(_) | ty::Int(_) = self.expr_ty.kind() {
+                    let src_layout = fcx
+                        .tcx
+                        .layout_of(fcx.typing_env(fcx.param_env).as_query_input(self.expr_ty));
+                    let dest_layout =
+                        fcx.tcx.layout_of(fcx.typing_env(fcx.param_env).as_query_input(m_cast.ty));
+
+                    if let (Ok(src), Ok(dest)) = (src_layout, dest_layout) {
+                        // Cast safety check for compartment system
+                        // Only enabled when compartments feature is active
+                        if fcx.tcx.features().compartments() && src.size < dest.size {
+                            fcx.tcx.dcx().emit_err(errors::UnsafePointerCastError {
+                                span: self.expr_span,
+                                note: "source integer is smaller than target pointee type"
+                                    .to_string(),
+                            });
+                        }
+                    }
+                }
+                Ok(CastKind::AddrPtrCast)
+            }
             Some(PointerKind::VTable(_)) => Err(CastError::IntToWideCast(Some("a vtable"))),
             Some(PointerKind::Length) => Err(CastError::IntToWideCast(Some("a length"))),
             Some(PointerKind::OfAlias(_) | PointerKind::OfParam(_)) => {

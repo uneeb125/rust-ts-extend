@@ -14,6 +14,7 @@ use rustc_hir::pat_util::EnumerateAndAdjustIterator;
 use rustc_hir::{self as hir, LangItem, RangeEnd};
 use rustc_index::Idx;
 use rustc_infer::infer::TyCtxtInferExt;
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::mir::interpret::LitToConstInput;
 use rustc_middle::thir::{
     Ascription, FieldPat, LocalVarId, Pat, PatKind, PatRange, PatRangeBoundary,
@@ -115,7 +116,16 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                     PatKind::DerefPattern { subpattern: thir_pat, borrow }
                 }
             };
-            Box::new(Pat { span, ty: adjust.source, kind })
+            Box::new(Pat {
+                span,
+                ty: adjust.source,
+                compartment: self
+                    .typeck_results
+                    .node_compartment(pat.hir_id)
+                    .cloned()
+                    .unwrap_or_else(CompartmentSet::empty),
+                kind,
+            })
         });
 
         if let Some(s) = &mut self.rust_2024_migration
@@ -275,11 +285,11 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
         // `Foo::<'a>::A..=Foo::B`), we need to put the ascriptions for the associated
         // constants somewhere. Have them on the range pattern.
         for ascription in ascriptions {
-            let subpattern = Box::new(Pat { span, ty, kind });
+            let subpattern = Box::new(Pat { span, ty, compartment: CompartmentSet::empty(), kind });
             kind = PatKind::AscribeUserType { ascription, subpattern };
         }
         for def_id in expanded_consts {
-            let subpattern = Box::new(Pat { span, ty, kind });
+            let subpattern = Box::new(Pat { span, ty, compartment: CompartmentSet::empty(), kind });
             kind = PatKind::ExpandedConstant { def_id, subpattern };
         }
         Ok(kind)
@@ -408,7 +418,16 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
             hir::PatKind::Err(guar) => PatKind::Error(guar),
         };
 
-        Box::new(Pat { span, ty, kind })
+        Box::new(Pat {
+            span,
+            ty,
+            compartment: self
+                .typeck_results
+                .node_compartment(pat.hir_id)
+                .cloned()
+                .unwrap_or_else(CompartmentSet::empty),
+            kind,
+        })
     }
 
     fn lower_tuple_subpats(
@@ -535,7 +554,16 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 inferred_ty: self.typeck_results.node_type(hir_id),
             };
             kind = PatKind::AscribeUserType {
-                subpattern: Box::new(Pat { span, ty, kind }),
+                subpattern: Box::new(Pat {
+                    span,
+                    ty,
+                    compartment: self
+                        .typeck_results
+                        .node_compartment(hir_id)
+                        .cloned()
+                        .unwrap_or_else(CompartmentSet::empty),
+                    kind,
+                }),
                 ascription: Ascription { annotation, variance: ty::Covariant },
             };
         }
@@ -567,7 +595,16 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                 // The path isn't the name of a constant, so it must actually
                 // be a unit struct or unit variant (e.g. `Option::None`).
                 let kind = self.lower_variant_or_leaf(res, id, span, ty, vec![]);
-                return Box::new(Pat { span, ty, kind });
+                return Box::new(Pat {
+                    span,
+                    ty,
+                    compartment: self
+                        .typeck_results
+                        .node_compartment(id)
+                        .cloned()
+                        .unwrap_or_else(CompartmentSet::empty),
+                    kind,
+                });
             }
         };
 
@@ -595,7 +632,16 @@ impl<'a, 'tcx> PatCtxt<'a, 'tcx> {
                     variance: ty::Contravariant,
                 },
             };
-            pattern = Box::new(Pat { span, kind, ty });
+            pattern = Box::new(Pat {
+                span,
+                kind,
+                ty,
+                compartment: self
+                    .typeck_results
+                    .node_compartment(id)
+                    .cloned()
+                    .unwrap_or_else(CompartmentSet::empty),
+            });
         }
 
         pattern

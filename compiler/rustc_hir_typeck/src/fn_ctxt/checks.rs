@@ -13,6 +13,8 @@ use rustc_hir_analysis::check::potentially_plural_count;
 use rustc_hir_analysis::hir_ty_lowering::{HirTyLowerer, PermitVariants};
 use rustc_index::IndexVec;
 use rustc_infer::infer::{BoundRegionConversionTime, DefineOpaqueTypes, InferOk, TypeTrace};
+#[allow(unused_imports)]
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::adjustment::AllowTwoPhase;
 use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::{self, IsSuggestable, Ty, TyCtxt, TypeVisitableExt};
@@ -873,6 +875,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Type check the initializer.
         if let Some(ref init) = decl.init {
             let init_ty = self.check_decl_initializer(decl.hir_id, decl.pat, init);
+            // Propagate compartment from initializer to pattern
+            let compartment = self.typeck_results.borrow().node_compartment(init.hir_id).cloned();
+            if let Some(compartment) = compartment {
+                self.record_compartment(decl.pat.hir_id, compartment);
+            }
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);
         }
 

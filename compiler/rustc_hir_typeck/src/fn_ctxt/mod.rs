@@ -17,6 +17,7 @@ use rustc_hir_analysis::hir_ty_lowering::{
 };
 use rustc_infer::infer::{self, RegionVariableOrigin};
 use rustc_infer::traits::{DynCompatibilityViolation, Obligation};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::{self, Const, Ty, TyCtxt, TypeVisitableExt};
 use rustc_session::Session;
 use rustc_span::{self, DUMMY_SP, ErrorGuaranteed, Ident, Span, sym};
@@ -179,6 +180,43 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
     pub(crate) fn sess(&self) -> &Session {
         self.tcx.sess
+    }
+
+    // Record data for THIR to pick up later
+    pub(crate) fn record_compartment(&self, hir_id: hir::HirId, set: CompartmentSet) {
+        if std::env::var("MY_DEBUG_TYPECK").is_ok() {
+            println!("DEBUG: Recording {:?} for HirId {:?}", set, hir_id);
+        }
+        self.typeck_results.borrow_mut().node_compartments_mut().insert(hir_id, set);
+    }
+
+    // Get the compartment of the function we are inside
+    pub(crate) fn current_compartment(&self) -> CompartmentSet {
+        let owner = self.body_id.to_def_id();
+        self.tcx.compartment_set(owner).clone()
+    }
+
+    // Central enforcement logic
+    pub(crate) fn check_compartment_access(
+        &self,
+        target_def: DefId,
+        span: Span,
+        kind: &str,
+    ) -> CompartmentSet {
+        let current = self.current_compartment();
+        let target = self.tcx.compartment_set(target_def).clone();
+
+        if !current.can_access(&target) {
+            let err = self.tcx.dcx().struct_span_err(
+                span,
+                format!(
+                    "compartment violation: cannot access {} in '{:?}' from context '{:?}'",
+                    kind, target.tags, current.tags
+                ),
+            );
+            err.emit();
+        }
+        target
     }
 
     /// Creates an `TypeErrCtxt` with a reference to the in-progress

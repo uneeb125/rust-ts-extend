@@ -1,7 +1,18 @@
-use rustc_macros::HashStable;
+use rustc_macros::{HashStable, TyDecodable, TyEncodable, TypeFoldable, TypeVisitable};
 use rustc_span::Symbol;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, HashStable)]
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    HashStable,
+    TyEncodable,
+    TyDecodable,
+    TypeFoldable,
+    TypeVisitable
+)]
 pub struct CompartmentSet {
     pub tags: Vec<Symbol>,
 }
@@ -23,7 +34,7 @@ impl CompartmentSet {
     }
 
     pub fn can_access(&self, target: &Self) -> bool {
-        if self.is_sudo() {
+        if self.is_sudo() || target.is_sudo() {
             return true;
         }
         target.tags.iter().all(|t| self.tags.contains(t))
