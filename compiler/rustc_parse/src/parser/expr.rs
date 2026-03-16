@@ -669,8 +669,8 @@ impl<'a> Parser<'a> {
         let parser_snapshot_before_type = self.clone();
         let cast_expr = match self.parse_as_cast_ty_no_parens() {
             Ok(rhs) => {
-                let compartments = self.parse_cast_compartments()?;
-                mk_expr(self, lhs, rhs, compartments)
+                // let compartments = self.parse_cast_compartments()?;
+                mk_expr(self, lhs, rhs, ThinVec::new() )
             },
             Err(type_err) => {
                 if !self.may_recover() {
@@ -822,7 +822,7 @@ impl<'a> Parser<'a> {
         };
         Ok(with_postfix)
     }
-
+    #[allow(dead_code)]
     fn parse_cast_compartments(&mut self) -> PResult<'a, ThinVec<(Symbol, Span)>> {
         let mut compartments = ThinVec::new();
 
@@ -838,14 +838,14 @@ impl<'a> Parser<'a> {
                     break;
                 }
             }
-            
+
             // If we find a token that can't be a compartment (like a keyword or operator),
             // stop parsing compartments
             if !self.token.is_ident() {
                 break;
             }
         }
-        
+
         Ok(compartments)
     }
 
