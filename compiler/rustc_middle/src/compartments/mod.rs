@@ -1,5 +1,5 @@
 use rustc_macros::{HashStable, TyDecodable, TyEncodable, TypeFoldable, TypeVisitable};
-use rustc_span::Symbol;
+use rustc_span::{Symbol,sym};
 
 #[derive(
     Clone,
@@ -20,6 +20,10 @@ pub struct CompartmentSet {
 impl CompartmentSet {
     pub fn empty() -> Self {
         Self { tags: Vec::new() }
+    }
+
+    pub fn default() -> Self {
+        Self { tags: vec![sym::Default] }
     }
 
     pub fn from_iter<I: IntoIterator<Item = Symbol>>(iter: I) -> Self {

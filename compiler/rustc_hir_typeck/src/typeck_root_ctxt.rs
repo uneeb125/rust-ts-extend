@@ -7,6 +7,7 @@ use rustc_hir::{self as hir, HirId, HirIdMap, LangItem};
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_span::Span;
 use rustc_span::def_id::LocalDefIdMap;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
@@ -47,6 +48,8 @@ pub(crate) struct TypeckRootCtxt<'tcx> {
     pub(super) typeck_results: RefCell<ty::TypeckResults<'tcx>>,
 
     pub(super) locals: RefCell<HirIdMap<Ty<'tcx>>>,
+
+    pub(super) current_compartments: CompartmentSet,
 
     pub(super) fulfillment_cx: RefCell<Box<dyn TraitEngine<'tcx, FulfillmentError<'tcx>>>>,
 
@@ -112,6 +115,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             locals: RefCell::new(Default::default()),
             fulfillment_cx,
             checked_opaque_types_storage_entries: Cell::new(None),
+            current_compartments: CompartmentSet::default(),
             deferred_sized_obligations: RefCell::new(Vec::new()),
             deferred_call_resolutions: RefCell::new(Default::default()),
             deferred_cast_checks: RefCell::new(Vec::new()),
@@ -188,5 +192,10 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             debug!("infer_var_info: {:?}.output = true", vid);
             infer_var_info.entry(vid).or_default().output = true;
         }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn get_current_compartments(&self) -> CompartmentSet {
+        self.current_compartments.clone()
     }
 }

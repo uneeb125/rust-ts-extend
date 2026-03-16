@@ -36,6 +36,7 @@ use rustc_hir::def_id::DefId;
 use rustc_hir::{self as hir, ExprKind};
 use rustc_infer::infer::DefineOpaqueTypes;
 use rustc_macros::{TypeFoldable, TypeVisitable};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::mir::Mutability;
 use rustc_middle::ty::adjustment::AllowTwoPhase;
 use rustc_middle::ty::cast::{CastKind, CastTy};
@@ -63,6 +64,10 @@ pub(crate) struct CastCheck<'tcx> {
     cast_ty: Ty<'tcx>,
     cast_span: Span,
     span: Span,
+    /// The compartments required for this cast
+    compartments: CompartmentSet,
+    /// Whether this cast is inside an unsafe block
+    is_unsafe: bool,
 }
 
 /// The kind of pointer and associated metadata (thin, length or vtable) - we
@@ -181,6 +186,7 @@ enum CastError<'tcx> {
     IntToWideCast(Option<&'static str>),
     ForeignNonExhaustiveAdt,
     PtrPtrAddingAutoTrait(Vec<DefId>),
+    CompartmentCastOutsideUnsafe,
 }
 
 impl From<ErrorGuaranteed> for CastError<'_> {
@@ -227,11 +233,37 @@ pub fn check_cast<'tcx>(
         &fn_ctxt, e, from_ty, to_ty,
         // We won't show any errors to the user, so the span is irrelevant here.
         DUMMY_SP, DUMMY_SP,
+        None,
     ) {
         check.do_check(&fn_ctxt).ok()
     } else {
         None
     }
+}
+
+fn is_inside_unsafe_context(tcx: TyCtxt<'_>, hir_id: hir::HirId) -> bool {
+    for (_, node) in tcx.hir_parent_iter(hir_id) {
+        match node {
+            hir::Node::Block(block) if matches!(block.rules, hir::BlockCheckMode::UnsafeBlock(_)) => {
+                return true;
+            }
+            hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => {
+                return false;
+            }
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn { sig, .. }, .. }) => {
+                return matches!(sig.header.safety, hir::HeaderSafety::Normal(hir::Safety::Unsafe));
+            }
+            hir::Node::ImplItem(hir::ImplItem { kind: hir::ImplItemKind::Fn(sig, _), .. }) => {
+                return matches!(sig.header.safety, hir::HeaderSafety::Normal(hir::Safety::Unsafe));
+            }
+            hir::Node::TraitItem(hir::TraitItem { kind: hir::TraitItemKind::Fn(sig, _), .. }) => {
+                return matches!(sig.header.safety, hir::HeaderSafety::Normal(hir::Safety::Unsafe));
+            }
+            hir::Node::Item(_) => return false,
+            _ => continue,
+        }
+    }
+    false
 }
 
 impl<'a, 'tcx> CastCheck<'tcx> {
@@ -242,9 +274,16 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         cast_ty: Ty<'tcx>,
         cast_span: Span,
         span: Span,
+        hir_ty: Option<&'tcx hir::Ty<'tcx>>,
     ) -> Result<CastCheck<'tcx>, ErrorGuaranteed> {
         let expr_span = expr.span.find_ancestor_inside(span).unwrap_or(expr.span);
-        let check = CastCheck { expr, expr_ty, expr_span, cast_ty, cast_span, span };
+
+        let compartments = hir_ty
+            .map(|ty| CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name)))
+            .unwrap_or_else(CompartmentSet::empty);
+        let is_unsafe = is_inside_unsafe_context(fcx.tcx, expr.hir_id);
+
+        let check = CastCheck { expr, expr_ty, expr_span, cast_ty, cast_span, span, compartments, is_unsafe };
 
         // For better error messages, check for some obviously unsized
         // cases now. We do a more thorough check at the end, once
@@ -617,6 +656,12 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                     },
                 });
             }
+            CastError::CompartmentCastOutsideUnsafe => {
+                fcx.dcx().span_err(
+                    self.span,
+                    "compartment casts require an `unsafe` block",
+                );
+            }
         }
     }
 
@@ -725,11 +770,15 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         }
     }
     /// Checks a cast, and report an error if one exists. In some cases, this
-    /// can return Ok and create type errors in the fcx rather than returning
+    /// can return Ok and create type errors in fcx rather than returning
     /// directly. coercion-cast is handled in check instead of here.
     fn do_check(&self, fcx: &FnCtxt<'a, 'tcx>) -> Result<CastKind, CastError<'tcx>> {
         use rustc_middle::ty::cast::CastTy::*;
         use rustc_middle::ty::cast::IntTy::*;
+
+        if !self.compartments.tags.is_empty() && !self.is_unsafe {
+            return Err(CastError::CompartmentCastOutsideUnsafe);
+        }
 
         let (t_from, t_cast) = match (CastTy::from_ty(self.expr_ty), CastTy::from_ty(self.cast_ty))
         {
