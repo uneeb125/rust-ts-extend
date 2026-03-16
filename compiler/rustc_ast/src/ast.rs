@@ -1726,7 +1726,7 @@ pub enum ExprKind {
     /// A literal (e.g., `1`, `"foo"`).
     Lit(token::Lit),
     /// A cast (e.g., `foo as f64`).
-    Cast(Box<Expr>, Box<Ty>),
+    Cast(Box<Expr>, Box<Ty>, ThinVec<(Symbol, Span)>),
     /// A type ascription (e.g., `builtin # type_ascribe(42, usize)`).
     ///
     /// Usually not written directly in user code but

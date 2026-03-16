@@ -1026,3 +1026,7 @@ parse_where_generics = generic parameters on `where` clauses are reserved for fu
 
 parse_zero_chars = empty character literal
     .label = {parse_zero_chars}
+
+
+
+parse_expected_compartment_identifier = expected compartment identifier

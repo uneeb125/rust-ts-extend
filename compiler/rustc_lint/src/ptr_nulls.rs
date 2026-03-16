@@ -84,7 +84,7 @@ fn useless_check<'a, 'tcx: 'a>(
         {
             return Some(UselessPtrNullChecksDiag::FnRet { fn_name });
         }
-        e = if let ExprKind::Cast(expr, t) = e.kind
+        e = if let ExprKind::Cast(expr, t, _) = e.kind
             && let TyKind::Ptr(_) = t.kind
         {
             had_at_least_one_cast = true;
@@ -229,7 +229,7 @@ impl<'tcx> LateLintPass<'tcx> for PtrNullChecks {
                 match to_check.kind {
                     // Catching:
                     // (fn_ptr as *<const/mut> <ty>) == (0 as <ty>)
-                    ExprKind::Cast(cast_expr, _)
+                    ExprKind::Cast(cast_expr, _, _)
                         if let ExprKind::Lit(spanned) = cast_expr.kind
                             && let LitKind::Int(v, _) = spanned.node
                             && v == 0 =>

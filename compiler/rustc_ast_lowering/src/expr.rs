@@ -152,11 +152,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     );
                     hir::ExprKind::Lit(lit)
                 }
-                ExprKind::Cast(expr, ty) => {
+                ExprKind::Cast(expr, ty, compartments) => {
                     let expr = self.lower_expr(expr);
                     let ty =
                         self.lower_ty(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Cast));
-                    hir::ExprKind::Cast(expr, ty)
+                    let hir_compartments = self.arena.alloc_from_iter(
+                        compartments.iter().map(|(sym, _span)| *sym)
+                    );
+                    hir::ExprKind::Cast(expr, ty, hir_compartments)
                 }
                 ExprKind::Type(expr, ty) => {
                     let expr = self.lower_expr(expr);

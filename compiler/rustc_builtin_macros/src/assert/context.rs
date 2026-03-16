@@ -229,7 +229,7 @@ impl<'cx, 'a> Context<'cx, 'a> {
                     self.manage_cond_expr(local_expr);
                 }
             }
-            ExprKind::Cast(local_expr, _) => {
+            ExprKind::Cast(local_expr, _, _) => {
                 self.manage_cond_expr(local_expr);
             }
             ExprKind::If(local_expr, _, _) => {

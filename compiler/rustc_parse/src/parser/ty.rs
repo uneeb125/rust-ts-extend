@@ -44,6 +44,12 @@ pub(super) enum RecoverQuestionMark {
     No,
 }
 
+#[derive(PartialEq)]
+pub(super) enum AllowParen {
+    Yes,
+    No,
+}
+
 /// Signals whether parsing a type should recover `->`.
 ///
 /// More specifically, when parsing a function like:
@@ -124,6 +130,7 @@ impl<'a> Parser<'a> {
                 RecoverReturnSign::Yes,
                 None,
                 RecoverQuestionMark::Yes,
+            AllowParen::Yes,
             )
         })
     }
@@ -139,6 +146,7 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::Yes,
             Some(ty_params),
             RecoverQuestionMark::Yes,
+            AllowParen::Yes,
         )
     }
 
@@ -153,6 +161,7 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::Yes,
             None,
             RecoverQuestionMark::Yes,
+            AllowParen::Yes,
         )?;
 
         // Recover a trailing `= EXPR` if present.
@@ -193,11 +202,13 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::Yes,
             None,
             RecoverQuestionMark::Yes,
+            AllowParen::Yes,
         )
     }
 
     /// Parses a type following an `as` cast. Similar to `parse_ty_no_plus`, but signaling origin
     /// for better diagnostics involving `?`.
+    #[allow(dead_code)]
     pub(super) fn parse_as_cast_ty(&mut self) -> PResult<'a, Box<Ty>> {
         self.parse_ty_common(
             AllowPlus::No,
@@ -206,6 +217,21 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::Yes,
             None,
             RecoverQuestionMark::No,
+            AllowParen::Yes,
+        )
+    }
+
+    /// Parses a type for cast without consuming parenthesized arguments.
+    /// This allows to parser to detect `(` after a type as potential compartment syntax.
+    pub(super) fn parse_as_cast_ty_no_parens(&mut self) -> PResult<'a, Box<Ty>> {
+        self.parse_ty_common(
+            AllowPlus::No,
+            AllowCVariadic::No,
+            RecoverQPath::Yes,
+            RecoverReturnSign::Yes,
+            None,
+            RecoverQuestionMark::No,
+            AllowParen::No,
         )
     }
 
@@ -217,6 +243,7 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::Yes,
             None,
             RecoverQuestionMark::No,
+            AllowParen::Yes,
         )
     }
 
@@ -230,6 +257,7 @@ impl<'a> Parser<'a> {
             RecoverReturnSign::OnlyFatArrow,
             None,
             RecoverQuestionMark::Yes,
+            AllowParen::Yes,
         )
     }
 
@@ -250,6 +278,7 @@ impl<'a> Parser<'a> {
                 recover_return_sign,
                 None,
                 RecoverQuestionMark::Yes,
+            AllowParen::Yes,
             )?;
             FnRetTy::Ty(ty)
         } else if recover_return_sign.can_recover(&self.token.kind) {
@@ -267,6 +296,7 @@ impl<'a> Parser<'a> {
                 recover_return_sign,
                 None,
                 RecoverQuestionMark::Yes,
+            AllowParen::Yes,
             )?;
             FnRetTy::Ty(ty)
         } else {
@@ -282,6 +312,7 @@ impl<'a> Parser<'a> {
         recover_return_sign: RecoverReturnSign,
         ty_generics: Option<&Generics>,
         recover_question_mark: RecoverQuestionMark,
+        allow_paren: AllowParen,
     ) -> PResult<'a, Box<Ty>> {
         let allow_qpath_recovery = recover_qpath == RecoverQPath::Yes;
         maybe_recover_from_interpolated_ty_qpath!(self, allow_qpath_recovery);
@@ -315,7 +346,7 @@ impl<'a> Parser<'a> {
 
         let lo = self.token.span;
         let mut impl_dyn_multi = false;
-        let kind = if self.check(exp!(OpenParen)) {
+        let kind = if self.check(exp!(OpenParen)) && allow_paren == AllowParen::Yes {
             self.parse_ty_tuple_or_parens(lo, allow_plus)?
         } else if self.eat(exp!(Bang)) {
             // Never type `!`

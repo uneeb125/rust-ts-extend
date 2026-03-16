@@ -1456,6 +1456,14 @@ pub(crate) struct ParenthesesInForHead {
     pub sugg: ParenthesesInForHeadSugg,
 }
 
+// Commented out - not currently used
+// #[derive(Diagnostic)]
+// #[diag(parse_expected_compartment_identifier)]
+// pub(crate) struct ExpectedCompartmentIdentifier {
+//     #[primary_span]
+//     pub span: Span,
+// }
+
 #[derive(Subdiagnostic)]
 #[multipart_suggestion(parse_suggestion, applicability = "machine-applicable")]
 pub(crate) struct ParenthesesInForHeadSugg {

@@ -642,7 +642,7 @@ fn resolve_local<'tcx>(
                     record_rvalue_scope_if_borrow_expr(visitor, subexpr, blk_id);
                 }
             }
-            hir::ExprKind::Cast(subexpr, _) => {
+            hir::ExprKind::Cast(subexpr, _, _) => {
                 record_rvalue_scope_if_borrow_expr(visitor, subexpr, blk_id)
             }
             hir::ExprKind::Block(block, _) => {

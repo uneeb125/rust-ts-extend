@@ -2517,7 +2517,7 @@ impl Expr<'_> {
             | ExprKind::Field(base, _)
             | ExprKind::Index(base, _, _)
             | ExprKind::AddrOf(.., base)
-            | ExprKind::Cast(base, _)
+            | ExprKind::Cast(base, _, _)
             | ExprKind::UnsafeBinderCast(_, base, _) => {
                 // This isn't exactly true for `Index` and all `Unary`, but we are using this
                 // method exclusively for diagnostics and there's a *cultural* pressure against
@@ -2749,7 +2749,7 @@ pub fn is_range_literal(expr: &Expr<'_>) -> bool {
 pub fn expr_needs_parens(expr: &Expr<'_>) -> bool {
     match expr.kind {
         // parenthesize if needed (Issue #46756)
-        ExprKind::Cast(_, _) | ExprKind::Binary(_, _, _) => true,
+        ExprKind::Cast(_, _, _) | ExprKind::Binary(_, _, _) => true,
         // parenthesize borrows of range literals (Issue #54505)
         _ if is_range_literal(expr) => true,
         _ => false,
@@ -2797,7 +2797,7 @@ pub enum ExprKind<'hir> {
     /// A literal (e.g., `1`, `"foo"`).
     Lit(Lit),
     /// A cast (e.g., `foo as f64`).
-    Cast(&'hir Expr<'hir>, &'hir Ty<'hir>),
+    Cast(&'hir Expr<'hir>, &'hir Ty<'hir>, &'hir [Symbol]),
     /// A type ascription (e.g., `x: Foo`). See RFC 3307.
     Type(&'hir Expr<'hir>, &'hir Ty<'hir>),
     /// Wraps the expression in a terminating scope.

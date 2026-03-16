@@ -1059,7 +1059,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 variant_index: FIRST_VARIANT,
                 name: self.typeck_results.field_index(expr.hir_id),
             },
-            hir::ExprKind::Cast(source, cast_ty) => {
+            hir::ExprKind::Cast(source, cast_ty, _) => {
                 // Check for a user-given type annotation on this `cast`
                 let user_provided_types = self.typeck_results.user_provided_types();
                 let user_ty = user_provided_types.get(cast_ty.hir_id);

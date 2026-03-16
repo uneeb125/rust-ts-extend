@@ -736,7 +736,7 @@ trait UnusedDelimLint {
                 innermost = match &innermost.kind {
                     ExprKind::Binary(_op, lhs, _rhs) => lhs,
                     ExprKind::Call(fn_, _params) => fn_,
-                    ExprKind::Cast(expr, _ty) => expr,
+                    ExprKind::Cast(expr, _ty, _) => expr,
                     ExprKind::Type(expr, _ty) => expr,
                     ExprKind::Index(base, _subscript, _) => base,
                     _ => break,
@@ -1205,7 +1205,7 @@ impl UnusedParens {
                 cur = rhs;
             }
 
-            if let ExprKind::Cast(_, ty) = &cur.kind
+            if let ExprKind::Cast(_, ty, _) = &cur.kind
                 && let ast::TyKind::Paren(_) = &ty.kind
             {
                 return Some(ty.id);

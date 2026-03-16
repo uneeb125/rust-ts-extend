@@ -544,7 +544,7 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
                 self.consume_expr(rhs)?;
             }
 
-            hir::ExprKind::Cast(base, _) => {
+            hir::ExprKind::Cast(base, _, _) => {
                 self.consume_expr(base)?;
             }
 
