@@ -669,8 +669,8 @@ impl<'a> Parser<'a> {
         let parser_snapshot_before_type = self.clone();
         let cast_expr = match self.parse_as_cast_ty_no_parens() {
             Ok(rhs) => {
-                // let compartments = self.parse_cast_compartments()?;
-                mk_expr(self, lhs, rhs, ThinVec::new() )
+                let compartments = self.parse_cast_compartments()?;
+                mk_expr(self, lhs, rhs, compartments)
             },
             Err(type_err) => {
                 if !self.may_recover() {
@@ -824,28 +824,34 @@ impl<'a> Parser<'a> {
     }
     #[allow(dead_code)]
     fn parse_cast_compartments(&mut self) -> PResult<'a, ThinVec<(Symbol, Span)>> {
+        // Check for "compartments" keyword first
+        if !self.eat_keyword_noexpect(sym::compartments) {
+            return Ok(ThinVec::new());
+        }
+        
+        self.expect(exp!(OpenParen))?;
+        
         let mut compartments = ThinVec::new();
-
-        // Parse compartment identifiers separated by whitespace
-        // This continues until we hit a token that can't be a compartment
-        loop {
+        let mut first = true;
+        
+        while !self.check(exp!(CloseParen)) {
+            if !first {
+                self.expect(exp!(Comma))?;
+            }
+            first = false;
+            
             let span = self.token.span;
             match self.parse_path_segment_ident() {
                 Ok(ident) => {
                     compartments.push((ident.name, span));
                 }
                 Err(_) => {
-                    break;
+                    self.bump();
                 }
             }
-
-            // If we find a token that can't be a compartment (like a keyword or operator),
-            // stop parsing compartments
-            if !self.token.is_ident() {
-                break;
-            }
         }
-
+        
+        self.expect(exp!(CloseParen))?;
         Ok(compartments)
     }
 
