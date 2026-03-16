@@ -3814,6 +3814,7 @@ fn mk_where_bound_predicate(
                     id: DUMMY_NODE_ID,
                     span: DUMMY_SP,
                     tokens: None,
+                    compartments: ThinVec::new(),
                 })),
             },
             span: DUMMY_SP,

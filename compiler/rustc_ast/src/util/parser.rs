@@ -201,7 +201,7 @@ pub fn contains_exterior_struct_lit(value: &ast::Expr) -> bool {
         }
         ast::ExprKind::Await(x, _)
         | ast::ExprKind::Unary(_, x)
-        | ast::ExprKind::Cast(x, _, _)
+        | ast::ExprKind::Cast(x, _)
         | ast::ExprKind::Type(x, _)
         | ast::ExprKind::Field(x, _)
         | ast::ExprKind::Index(x, _, _)

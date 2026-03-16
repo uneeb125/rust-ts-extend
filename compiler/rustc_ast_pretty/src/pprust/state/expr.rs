@@ -476,7 +476,7 @@ impl<'a> State<'a> {
                 );
                 self.print_token_literal(lit, expr.span)
             }
-            ast::ExprKind::Cast(expr, ty, compartments) => {
+            ast::ExprKind::Cast(expr, ty) => {
                 self.print_expr_cond_paren(
                     expr,
                     expr.precedence() < ExprPrecedence::Cast,
@@ -485,16 +485,6 @@ impl<'a> State<'a> {
                 self.space();
                 self.word_space("as");
                 self.print_type(ty);
-                
-                if !compartments.is_empty() {
-                    self.word_space(",");
-                    for (i, compartment) in compartments.iter().enumerate() {
-                        if i > 0 {
-                            self.word_space(",");
-                        }
-                        self.print_symbol(compartment.0, ast::StrStyle::Cooked);
-                    }
-                }
             }
             ast::ExprKind::Type(expr, ty) => {
                 self.word("builtin # type_ascribe");

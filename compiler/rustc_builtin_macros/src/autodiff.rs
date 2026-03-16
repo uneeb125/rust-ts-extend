@@ -795,6 +795,7 @@ mod llvm_enzyme {
                         id: ast::DUMMY_NODE_ID,
                         span,
                         tokens: None,
+                        compartments: ThinVec::new(),
                     });
                     d_decl.output = FnRetTy::Ty(ty.clone());
                     assert!(matches!(x.ret_activity, DiffActivity::None));
@@ -816,7 +817,7 @@ mod llvm_enzyme {
                     };
                     TyKind::Array(ty.clone(), anon_const)
                 };
-                let ty = Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None });
+                let ty = Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None, compartments: ty.compartments.clone() });
                 d_decl.output = FnRetTy::Ty(ty);
             }
             if matches!(x.ret_activity, DiffActivity::DualOnly | DiffActivity::DualvOnly) {
@@ -830,7 +831,7 @@ mod llvm_enzyme {
                     };
                     let kind = TyKind::Array(ty.clone(), anon_const);
                     let ty =
-                        Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None });
+                        Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None, compartments: ty.compartments.clone() });
                     d_decl.output = FnRetTy::Ty(ty);
                 }
             }
@@ -852,14 +853,14 @@ mod llvm_enzyme {
                         act_ret.insert(0, ty.clone());
                     }
                     let kind = TyKind::Tup(act_ret);
-                    Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None })
+                    Box::new(rustc_ast::Ty { kind, id: ty.id, span: ty.span, tokens: None, compartments: ty.compartments.clone() })
                 }
                 FnRetTy::Default(span) => {
                     if act_ret.len() == 1 {
                         act_ret[0].clone()
                     } else {
                         let kind = TyKind::Tup(act_ret.iter().map(|arg| arg.clone()).collect());
-                        Box::new(rustc_ast::Ty { kind, id: ast::DUMMY_NODE_ID, span, tokens: None })
+                        Box::new(rustc_ast::Ty { kind, id: ast::DUMMY_NODE_ID, span, tokens: None, compartments: ThinVec::new() })
                     }
                 }
             };

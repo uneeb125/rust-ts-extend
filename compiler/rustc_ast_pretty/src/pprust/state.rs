@@ -1358,6 +1358,18 @@ impl<'a> State<'a> {
                 self.print_ty_pat(pat);
             }
         }
+
+        // Print compartments after type
+        if !ty.compartments.is_empty() {
+            self.word("compartments(");
+            for (i, ident) in ty.compartments.iter().enumerate() {
+                if i > 0 {
+                    self.word_space(",");
+                }
+                self.print_ident(*ident);
+            }
+            self.word(")");
+        }
         self.end(ib);
     }
 

@@ -111,7 +111,7 @@ pub fn leading_labeled_expr(mut expr: &ast::Expr) -> bool {
             | Use(e, _)
             | Binary(_, e, _)
             | Call(e, _)
-            | Cast(e, _, _)
+            | Cast(e, _)
             | Field(e, _)
             | Index(e, _, _)
             | Match(e, _, MatchKind::Postfix)
@@ -204,7 +204,7 @@ pub fn expr_trailing_brace(mut expr: &ast::Expr) -> Option<TrailingBrace<'_>> {
             | While(..)
             | ConstBlock(_) => break Some(TrailingBrace::Expr(expr)),
 
-            Cast(_, ty, _) => {
+            Cast(_, ty) => {
                 break type_trailing_braced_mac_call(ty).map(TrailingBrace::MacCall);
             }
 

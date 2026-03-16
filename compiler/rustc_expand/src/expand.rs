@@ -2009,6 +2009,7 @@ impl DummyAstNode for ast::Ty {
             kind: TyKind::Dummy,
             span: Default::default(),
             tokens: Default::default(),
+            compartments: Default::default(),
         }
     }
 }

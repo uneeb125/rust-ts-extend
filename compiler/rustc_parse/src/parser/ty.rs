@@ -1558,6 +1558,6 @@ impl<'a> Parser<'a> {
     }
 
     pub(super) fn mk_ty(&self, span: Span, kind: TyKind) -> Box<Ty> {
-        Box::new(Ty { kind, span, id: ast::DUMMY_NODE_ID, tokens: None })
+        Box::new(Ty { kind, span, id: ast::DUMMY_NODE_ID, tokens: None, compartments: ThinVec::new(), })
     }
 }

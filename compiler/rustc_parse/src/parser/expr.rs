@@ -269,7 +269,7 @@ impl<'a> Parser<'a> {
             let op = op.node;
             // Special cases:
             if op == AssocOp::Cast {
-                lhs = self.parse_assoc_op_cast(lhs, lhs_span, op_span, |lhs, ty, comps| ExprKind::Cast(lhs, ty, comps))?;
+                lhs = self.parse_assoc_op_cast(lhs, lhs_span, op_span, |lhs, ty| ExprKind::Cast(lhs, ty))?;
                 continue;
             } else if let AssocOp::Range(limits) = op {
                 // If we didn't have to handle `x..`/`x..=`, it would be pretty easy to
@@ -658,19 +658,20 @@ impl<'a> Parser<'a> {
         lhs: Box<Expr>,
         lhs_span: Span,
         op_span: Span,
-        expr_kind: fn(Box<Expr>, Box<Ty>, ThinVec<(Symbol, Span)>) -> ExprKind,
+        expr_kind: fn(Box<Expr>, Box<Ty>) -> ExprKind,
     ) -> PResult<'a, Box<Expr>> {
-        let mk_expr = |this: &mut Self, lhs: Box<Expr>, rhs: Box<Ty>, compartments: ThinVec<(Symbol, Span)>| {
-            this.mk_expr(this.mk_expr_sp(&lhs, lhs_span, op_span, rhs.span), expr_kind(lhs, rhs, compartments))
+        let mk_expr = |this: &mut Self, lhs: Box<Expr>, rhs: Box<Ty>| {
+            this.mk_expr(this.mk_expr_sp(&lhs, lhs_span, op_span, rhs.span), expr_kind(lhs, rhs))
         };
 
         // Save the state of the parser before parsing type normally, in case there is a
         // LessThan comparison after this cast.
         let parser_snapshot_before_type = self.clone();
         let cast_expr = match self.parse_as_cast_ty_no_parens() {
-            Ok(rhs) => {
+            Ok(mut rhs) => {
                 let compartments = self.parse_cast_compartments()?;
-                mk_expr(self, lhs, rhs, compartments)
+                rhs.compartments = compartments;
+                mk_expr(self, lhs, rhs)
             },
             Err(type_err) => {
                 if !self.may_recover() {
@@ -721,7 +722,6 @@ impl<'a> Parser<'a> {
                             self,
                             lhs,
                             self.mk_ty(path.span, TyKind::Path(None, path.clone())),
-                            ThinVec::new(),
                         );
 
                         let args_span = self.look_ahead(1, |t| t.span).to(span_after_type);
@@ -782,7 +782,7 @@ impl<'a> Parser<'a> {
 
         // Check if an illegal postfix operator has been added after the cast.
         // If the resulting expression is not a cast, it is an illegal postfix operator.
-        if !matches!(with_postfix.kind, ExprKind::Cast(_, _, _)) {
+        if !matches!(with_postfix.kind, ExprKind::Cast(_, _)) {
             let msg = format!(
                 "cast cannot be followed by {}",
                 match with_postfix.kind {
@@ -823,34 +823,34 @@ impl<'a> Parser<'a> {
         Ok(with_postfix)
     }
     #[allow(dead_code)]
-    fn parse_cast_compartments(&mut self) -> PResult<'a, ThinVec<(Symbol, Span)>> {
+    fn parse_cast_compartments(&mut self) -> PResult<'a, ThinVec<Ident>> {
         // Check for "compartments" keyword first
         if !self.eat_keyword_noexpect(sym::compartments) {
             return Ok(ThinVec::new());
         }
-        
+
         self.expect(exp!(OpenParen))?;
-        
+
         let mut compartments = ThinVec::new();
         let mut first = true;
-        
+
         while !self.check(exp!(CloseParen)) {
             if !first {
                 self.expect(exp!(Comma))?;
             }
             first = false;
-            
-            let span = self.token.span;
+
+            let _span = self.token.span;
             match self.parse_path_segment_ident() {
                 Ok(ident) => {
-                    compartments.push((ident.name, span));
+                    compartments.push(ident);
                 }
                 Err(_) => {
                     self.bump();
                 }
             }
         }
-        
+
         self.expect(exp!(CloseParen))?;
         Ok(compartments)
     }
@@ -4279,7 +4279,7 @@ impl MutVisitor for CondChecker<'_> {
                 mut_visit::walk_expr(self, e);
                 self.forbid_let_reason = forbid_let_reason;
             }
-            ExprKind::Cast(ref mut op, _, _)
+            ExprKind::Cast(ref mut op, _)
             | ExprKind::Type(ref mut op, _)
             | ExprKind::UnsafeBinderCast(_, ref mut op, _) => {
                 let forbid_let_reason = self.forbid_let_reason;

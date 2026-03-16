@@ -386,6 +386,7 @@ macro_rules! common_visitor_and_walkers {
             ThinVec<AngleBracketedArg>,
             ThinVec<Attribute>,
             ThinVec<(Ident, Option<Ident>)>,
+            ThinVec<Ident>,
             ThinVec<(NodeId, Path)>,
             ThinVec<PathSegment>,
             ThinVec<PreciseCapturingArg>,
@@ -970,7 +971,7 @@ macro_rules! common_visitor_and_walkers {
                     visit_visitable!($($mut)? vis, kind, mutbl, subexpression),
                 ExprKind::Unary(op, subexpression) =>
                     visit_visitable!($($mut)? vis, op, subexpression),
-                ExprKind::Cast(subexpression, typ, _) | ExprKind::Type(subexpression, typ) =>
+                ExprKind::Cast(subexpression, typ) | ExprKind::Type(subexpression, typ) =>
                     visit_visitable!($($mut)? vis, subexpression, typ),
                 ExprKind::Let(pat, expr, span, _recovered) =>
                     visit_visitable!($($mut)? vis, pat, expr, span),

@@ -43,7 +43,7 @@ pub(crate) fn placeholder(
         })
     };
     let ty = || {
-        Box::new(ast::Ty { id, kind: ast::TyKind::MacCall(mac_placeholder()), span, tokens: None })
+        Box::new(ast::Ty { id, kind: ast::TyKind::MacCall(mac_placeholder()), span, tokens: None, compartments: ThinVec::new() })
     };
     let pat = || {
         Box::new(ast::Pat {
@@ -122,6 +122,7 @@ pub(crate) fn placeholder(
             span,
             kind: ast::TyKind::MacCall(mac_placeholder()),
             tokens: None,
+            compartments: ThinVec::new(),
         })),
         AstFragmentKind::Stmts => AstFragment::Stmts(smallvec![{
             let mac = Box::new(ast::MacCallStmt {

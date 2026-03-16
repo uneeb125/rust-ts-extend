@@ -669,7 +669,7 @@ impl Pat {
             _ => return None,
         };
 
-        Some(Box::new(Ty { kind, id: self.id, span: self.span, tokens: None }))
+        Some(Box::new(Ty { kind, id: self.id, span: self.span, tokens: None, compartments: ThinVec::new() }))
     }
 
     /// Walk top-down and call `it` in each place where a pattern occurs
@@ -1509,7 +1509,7 @@ impl Expr {
             _ => return None,
         };
 
-        Some(Box::new(Ty { kind, id: self.id, span: self.span, tokens: None }))
+        Some(Box::new(Ty { kind, id: self.id, span: self.span, tokens: None, compartments: ThinVec::new() }))
     }
 
     pub fn precedence(&self) -> ExprPrecedence {
@@ -1726,7 +1726,7 @@ pub enum ExprKind {
     /// A literal (e.g., `1`, `"foo"`).
     Lit(token::Lit),
     /// A cast (e.g., `foo as f64`).
-    Cast(Box<Expr>, Box<Ty>, ThinVec<(Symbol, Span)>),
+    Cast(Box<Expr>, Box<Ty>),
     /// A type ascription (e.g., `builtin # type_ascribe(42, usize)`).
     ///
     /// Usually not written directly in user code but
@@ -2391,6 +2391,7 @@ pub struct Ty {
     pub kind: TyKind,
     pub span: Span,
     pub tokens: Option<LazyAttrTokenStream>,
+    pub compartments: ThinVec<Ident>,
 }
 
 impl Clone for Ty {
@@ -2400,6 +2401,7 @@ impl Clone for Ty {
             kind: self.kind.clone(),
             span: self.span,
             tokens: self.tokens.clone(),
+            compartments: self.compartments.clone(),
         })
     }
 }
@@ -2936,6 +2938,7 @@ impl Param {
             kind: TyKind::ImplicitSelf,
             span: eself_ident.span,
             tokens: None,
+            compartments: ThinVec::new(),
         });
         let (mutbl, ty) = match eself.node {
             SelfKind::Explicit(ty, mutbl) => (mutbl, ty),
@@ -2947,6 +2950,7 @@ impl Param {
                     kind: TyKind::Ref(lt, MutTy { ty: infer_ty, mutbl }),
                     span,
                     tokens: None,
+                    compartments: ThinVec::new(),
                 }),
             ),
             SelfKind::Pinned(lt, mutbl) => (
@@ -2956,6 +2960,7 @@ impl Param {
                     kind: TyKind::PinnedRef(lt, MutTy { ty: infer_ty, mutbl }),
                     span,
                     tokens: None,
+                    compartments: ThinVec::new(),
                 }),
             ),
         };
@@ -4063,7 +4068,7 @@ mod size_asserts {
     static_assert_size!(Stmt, 32);
     static_assert_size!(StmtKind, 16);
     static_assert_size!(TraitImplHeader, 80);
-    static_assert_size!(Ty, 64);
+    static_assert_size!(Ty, 72);
     static_assert_size!(TyKind, 40);
     // tidy-alphabetical-end
 }

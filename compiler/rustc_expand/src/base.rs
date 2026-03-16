@@ -690,6 +690,7 @@ impl MacResult for DummyResult {
             kind: ast::TyKind::Tup(ThinVec::new()),
             span: self.span,
             tokens: None,
+            compartments: ThinVec::new(),
         }))
     }
 

@@ -74,7 +74,7 @@ impl<'a> ExtCtxt<'a> {
     }
 
     pub fn ty(&self, span: Span, kind: ast::TyKind) -> Box<ast::Ty> {
-        Box::new(ast::Ty { id: ast::DUMMY_NODE_ID, span, kind, tokens: None })
+        Box::new(ast::Ty { id: ast::DUMMY_NODE_ID, span, kind, tokens: None, compartments: ThinVec::new() })
     }
 
     pub fn ty_infer(&self, span: Span) -> Box<ast::Ty> {

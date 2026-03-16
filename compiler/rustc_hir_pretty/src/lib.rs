@@ -1502,13 +1502,14 @@ impl<'a> State<'a> {
                 self.print_type(ty);
                 
                 if !compartments.is_empty() {
-                    self.word_space(",");
+                    self.word("compartments(");
                     for (i, compartment) in compartments.iter().enumerate() {
                         if i > 0 {
                             self.word_space(",");
                         }
                         self.print_ident(Ident::with_dummy_span(*compartment));
                     }
+                    self.word(")");
                 }
             }
             hir::ExprKind::Type(expr, ty) => {
