@@ -9,6 +9,7 @@ use rustc_hir::{self as hir, HirId, LangItem};
 use rustc_hir_analysis::autoderef::Autoderef;
 use rustc_infer::infer::BoundRegionConversionTime;
 use rustc_infer::traits::{Obligation, ObligationCause, ObligationCauseCode};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::adjustment::{
     Adjust, Adjustment, AllowTwoPhase, AutoBorrow, AutoBorrowMutability,
 };
@@ -582,6 +583,34 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             TupleArgumentsFlag::DontTupleArguments,
             def_id,
         );
+
+        if let Some(def_id) = def_id {
+            if let Some(local_def_id) = def_id.as_local() {
+                let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                    self.tcx,
+                    local_def_id,
+                );
+
+                for arg in arg_exprs {
+                    if let hir::ExprKind::Type(_, ty) = &arg.kind {
+                        let arg_compartments = CompartmentSet::from_iter(
+                            ty.compartments.iter().map(|ident| ident.name)
+                        );
+
+                        if !arg_compartments.tags.is_empty() && !fn_compartments.can_access(&arg_compartments) {
+                            self.tcx.dcx().span_err(
+                                arg.span,
+                                format!(
+                                    "argument has compartments ({}) that are not allowed by function's compartments ({})",
+                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         if fn_sig.abi == rustc_abi::ExternAbi::RustCall {
             let sp = arg_exprs.last().map_or(call_expr.span, |expr| expr.span);

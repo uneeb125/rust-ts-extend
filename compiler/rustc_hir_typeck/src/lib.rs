@@ -56,11 +56,13 @@ use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 use rustc_middle::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_middle::{bug, span_bug};
+use rustc_middle::compartments::CompartmentSet;
 use rustc_session::config;
 use rustc_span::Span;
 use rustc_span::def_id::LocalDefId;
 use tracing::{debug, instrument};
 use typeck_root_ctxt::TypeckRootCtxt;
+use rustc_hir::attrs::AttributeKind;
 
 use crate::check::check_fn;
 use crate::coercion::DynamicCoerceMany;
@@ -129,7 +131,23 @@ fn typeck_with_inspect<'tcx>(
 
     let param_env = tcx.param_env(def_id);
 
-    let root_ctxt = TypeckRootCtxt::new(tcx, def_id);
+    let compartments = if let hir::Node::Item(item) = node {
+        let attrs = tcx.hir_attrs(item.hir_id());
+        attrs
+            .iter()
+            .find_map(|attr| {
+                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(CompartmentSet::default)
+    } else {
+        CompartmentSet::default()
+    };
+
+    let root_ctxt = TypeckRootCtxt::new_with_compartments(tcx, def_id, compartments);
     if let Some(inspector) = inspector {
         root_ctxt.infcx.attach_obligation_inspector(inspector);
     }

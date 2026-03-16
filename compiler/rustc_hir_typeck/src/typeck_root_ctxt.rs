@@ -4,6 +4,7 @@ use std::ops::Deref;
 use rustc_data_structures::unord::{UnordMap, UnordSet};
 use rustc_hir::def_id::LocalDefId;
 use rustc_hir::{self as hir, HirId, HirIdMap, LangItem};
+use rustc_hir::attrs::AttributeKind;
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
@@ -99,6 +100,14 @@ impl<'tcx> Deref for TypeckRootCtxt<'tcx> {
 
 impl<'tcx> TypeckRootCtxt<'tcx> {
     pub(crate) fn new(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> Self {
+        Self::new_with_compartments(tcx, def_id, CompartmentSet::default())
+    }
+
+    pub(crate) fn new_with_compartments(
+        tcx: TyCtxt<'tcx>,
+        def_id: LocalDefId,
+        compartments: CompartmentSet,
+    ) -> Self {
         let hir_owner = tcx.local_def_id_to_hir_id(def_id).owner;
 
         let infcx = tcx
@@ -115,7 +124,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             locals: RefCell::new(Default::default()),
             fulfillment_cx,
             checked_opaque_types_storage_entries: Cell::new(None),
-            current_compartments: CompartmentSet::default(),
+            current_compartments: compartments,
             deferred_sized_obligations: RefCell::new(Vec::new()),
             deferred_call_resolutions: RefCell::new(Default::default()),
             deferred_cast_checks: RefCell::new(Vec::new()),
@@ -197,5 +206,58 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
     #[allow(dead_code)]
     pub(super) fn get_current_compartments(&self) -> CompartmentSet {
         self.current_compartments.clone()
+    }
+
+    pub(super) fn get_function_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
+        let hir_id = tcx.local_def_id_to_hir_id(def_id);
+        let attrs = tcx.hir_attrs(hir_id);
+        attrs
+            .iter()
+            .find_map(|attr| {
+                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(CompartmentSet::default)
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn check_compartments_allowed(
+        &self,
+        tcx: TyCtxt<'_>,
+        compartments: &CompartmentSet,
+        span: Span,
+        is_unsafe: bool,
+    ) {
+        if is_unsafe {
+            return;
+        }
+        if !compartments.tags.is_empty() {
+            return;
+        }
+        let current = self.get_current_compartments();
+        if current.is_sudo() {
+            return;
+        }
+        let allowed = compartments.tags.iter().all(|tag| current.tags.contains(tag));
+        if !allowed {
+            tcx.dcx().span_err(
+                span,
+                format!(
+                    "cannot access compartment(s): {} - not available in current scope",
+                    compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                ),
+            );
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn add_compartments_to_current(&mut self, compartments: CompartmentSet) {
+        let mut tags: Vec<_> = self.current_compartments.tags.iter().cloned().chain(compartments.tags.iter().cloned()).collect();
+        tags.sort_unstable();
+        tags.dedup();
+        self.current_compartments = CompartmentSet { tags };
     }
 }
