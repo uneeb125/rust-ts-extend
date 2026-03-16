@@ -1290,6 +1290,47 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         }
     }
 
+    #[allow(dead_code)]
+    fn ty_with_compartments(&mut self, span: Span, kind: hir::TyKind<'hir>, target_id: Option<hir::ItemLocalId>) -> hir::Ty<'hir> {
+        let compartments = self.extract_compartments_from_attrs(target_id);
+        hir::Ty {
+            hir_id: self.next_id(),
+            kind,
+            span: self.lower_span(span),
+            compartments,
+        }
+    }
+
+    fn extract_compartments_from_attrs(&mut self, target_id: Option<hir::ItemLocalId>) -> &'hir [rustc_span::Ident] {
+        let mut compartments = Vec::new();
+
+        if let Some(target_id) = target_id {
+            if let Some(&attrs) = self.attrs.get(&target_id) {
+                for attr in attrs {
+                    if let hir::Attribute::Parsed(hir::attrs::AttributeKind::Compartments(items, span)) = attr {
+                        for (symbol, _) in items {
+                            compartments.push(rustc_span::Ident::new(*symbol, *span));
+                        }
+                    }
+                }
+            }
+        }
+
+        if compartments.is_empty() {
+            if let Some(&attrs) = self.attrs.get(&hir::ItemLocalId::from_u32(0)) {
+                for attr in attrs {
+                    if let hir::Attribute::Parsed(hir::attrs::AttributeKind::Compartments(items, span)) = attr {
+                        for (symbol, _) in items {
+                            compartments.push(rustc_span::Ident::new(*symbol, *span));
+                        }
+                    }
+                }
+            }
+        }
+
+        self.arena.alloc_from_iter(compartments)
+    }
+
     fn ty_tup(&mut self, span: Span, tys: &'hir [hir::Ty<'hir>]) -> hir::Ty<'hir> {
         self.ty(span, hir::TyKind::Tup(tys))
     }
