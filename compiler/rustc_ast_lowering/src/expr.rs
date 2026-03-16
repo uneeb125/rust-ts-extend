@@ -154,12 +154,15 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 }
                 ExprKind::Cast(expr, ty) => {
                     let expr = self.lower_expr(expr);
-                    let hir_compartments = self.arena.alloc_from_iter(
-                        ty.compartments.iter().map(|ident| ident.name)
-                    );
-                    let ty =
-                        self.lower_ty(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Cast));
-                    hir::ExprKind::Cast(expr, ty, hir_compartments)
+                    let hir_compartments = self.arena.alloc_from_iter(ty.compartments.iter().copied());
+                    let hir_ty_lowered = self.lower_ty_direct(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Cast));
+                    let hir_ty = hir::Ty {
+                        hir_id: hir_ty_lowered.hir_id,
+                        kind: hir_ty_lowered.kind,
+                        span: self.lower_span(ty.span),
+                        compartments: hir_compartments,
+                    };
+                    hir::ExprKind::Cast(expr, self.arena.alloc(hir_ty))
                 }
                 ExprKind::Type(expr, ty) => {
                     let expr = self.lower_expr(expr);
@@ -712,6 +715,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     hir_id: self.next_id(),
                     kind: hir::TyKind::Path(resume_ty),
                     span: unstable_span,
+                    compartments: &[],
                 };
                 let inputs = arena_vec![self; input_ty];
 

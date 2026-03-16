@@ -503,7 +503,7 @@ pub struct InferArg {
 
 impl InferArg {
     pub fn to_ty(&self) -> Ty<'static> {
-        Ty { kind: TyKind::Infer(()), span: self.span, hir_id: self.hir_id }
+        Ty { kind: TyKind::Infer(()), span: self.span, hir_id: self.hir_id, compartments: &[] }
     }
 }
 
@@ -2517,7 +2517,7 @@ impl Expr<'_> {
             | ExprKind::Field(base, _)
             | ExprKind::Index(base, _, _)
             | ExprKind::AddrOf(.., base)
-            | ExprKind::Cast(base, _, _)
+            | ExprKind::Cast(base, _)
             | ExprKind::UnsafeBinderCast(_, base, _) => {
                 // This isn't exactly true for `Index` and all `Unary`, but we are using this
                 // method exclusively for diagnostics and there's a *cultural* pressure against
@@ -2749,7 +2749,7 @@ pub fn is_range_literal(expr: &Expr<'_>) -> bool {
 pub fn expr_needs_parens(expr: &Expr<'_>) -> bool {
     match expr.kind {
         // parenthesize if needed (Issue #46756)
-        ExprKind::Cast(_, _, _) | ExprKind::Binary(_, _, _) => true,
+        ExprKind::Cast(_, _) | ExprKind::Binary(_, _, _) => true,
         // parenthesize borrows of range literals (Issue #54505)
         _ if is_range_literal(expr) => true,
         _ => false,
@@ -2797,7 +2797,7 @@ pub enum ExprKind<'hir> {
     /// A literal (e.g., `1`, `"foo"`).
     Lit(Lit),
     /// A cast (e.g., `foo as f64`).
-    Cast(&'hir Expr<'hir>, &'hir Ty<'hir>, &'hir [Symbol]),
+    Cast(&'hir Expr<'hir>, &'hir Ty<'hir>),
     /// A type ascription (e.g., `x: Foo`). See RFC 3307.
     Type(&'hir Expr<'hir>, &'hir Ty<'hir>),
     /// Wraps the expression in a terminating scope.
@@ -3377,6 +3377,7 @@ pub struct Ty<'hir, Unambig = ()> {
     pub hir_id: HirId,
     pub span: Span,
     pub kind: TyKind<'hir, Unambig>,
+    pub compartments: &'hir [Ident],
 }
 
 impl<'hir> Ty<'hir, AmbigArg> {
@@ -5025,7 +5026,7 @@ mod size_asserts {
     static_assert_size!(TraitImplHeader<'_>, 48);
     static_assert_size!(TraitItem<'_>, 88);
     static_assert_size!(TraitItemKind<'_>, 48);
-    static_assert_size!(Ty<'_>, 48);
+    static_assert_size!(Ty<'_>, 64);
     static_assert_size!(TyKind<'_>, 32);
     // tidy-alphabetical-end
 }

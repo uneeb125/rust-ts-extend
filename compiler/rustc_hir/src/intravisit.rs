@@ -850,7 +850,7 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr<'v>) 
         ExprKind::AddrOf(_, _, ref subexpression) | ExprKind::Unary(_, ref subexpression) => {
             try_visit!(visitor.visit_expr(subexpression));
         }
-        ExprKind::Cast(ref subexpression, ref typ, _) | ExprKind::Type(ref subexpression, ref typ) => {
+        ExprKind::Cast(ref subexpression, ref typ) | ExprKind::Type(ref subexpression, ref typ) => {
             try_visit!(visitor.visit_expr(subexpression));
             try_visit!(visitor.visit_ty_unambig(typ));
         }
@@ -978,14 +978,14 @@ pub fn walk_unambig_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty<'v>) -> 
     match typ.try_as_ambig_ty() {
         Some(ambig_ty) => visitor.visit_ty(ambig_ty),
         None => {
-            let Ty { hir_id, span, kind: _ } = typ;
+            let Ty { hir_id, span, kind: _, compartments: _ } = typ;
             visitor.visit_infer(*hir_id, *span, InferKind::Ty(typ))
         }
     }
 }
 
 pub fn walk_ty<'v, V: Visitor<'v>>(visitor: &mut V, typ: &'v Ty<'v, AmbigArg>) -> V::Result {
-    let Ty { hir_id, span: _, kind } = typ;
+    let Ty { hir_id, span: _, kind, compartments: _ } = typ;
     try_visit!(visitor.visit_id(*hir_id));
 
     match *kind {

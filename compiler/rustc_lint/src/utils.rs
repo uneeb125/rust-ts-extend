@@ -17,7 +17,7 @@ pub(crate) fn peel_casts<'tcx>(
     loop {
         e = e.peel_blocks();
         // <expr> as ...
-        e = if let ExprKind::Cast(expr, _, _) = e.kind {
+        e = if let ExprKind::Cast(expr, _) = e.kind {
             expr
         // <expr>.cast(), <expr>.cast_mut() or <expr>.cast_const()
         } else if let ExprKind::MethodCall(_, expr, [], _) = e.kind

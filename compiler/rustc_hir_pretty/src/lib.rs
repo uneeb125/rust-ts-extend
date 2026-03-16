@@ -1495,19 +1495,19 @@ impl<'a> State<'a> {
             hir::ExprKind::Lit(lit) => {
                 self.print_literal(&lit);
             }
-            hir::ExprKind::Cast(expr, ty, compartments) => {
+            hir::ExprKind::Cast(expr, ty) => {
                 self.print_expr_cond_paren(expr, self.precedence(expr) < ExprPrecedence::Cast);
                 self.space();
                 self.word_space("as");
                 self.print_type(ty);
                 
-                if !compartments.is_empty() {
+                if !ty.compartments.is_empty() {
                     self.word("compartments(");
-                    for (i, compartment) in compartments.iter().enumerate() {
+                    for (i, ident) in ty.compartments.iter().enumerate() {
                         if i > 0 {
                             self.word_space(",");
                         }
-                        self.print_ident(Ident::with_dummy_span(*compartment));
+                        self.print_ident(*ident);
                     }
                     self.word(")");
                 }
@@ -2625,7 +2625,7 @@ fn contains_exterior_struct_lit(value: &hir::Expr<'_>) -> bool {
             contains_exterior_struct_lit(lhs) || contains_exterior_struct_lit(rhs)
         }
         hir::ExprKind::Unary(_, x)
-        | hir::ExprKind::Cast(x, _, _)
+        | hir::ExprKind::Cast(x, _)
         | hir::ExprKind::Type(x, _)
         | hir::ExprKind::Field(x, _)
         | hir::ExprKind::Index(x, _, _) => {

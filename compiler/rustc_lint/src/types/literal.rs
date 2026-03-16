@@ -29,7 +29,7 @@ fn lint_overflowing_range_endpoint<'tcx>(
 ) -> bool {
     // Look past casts to support cases like `0..256 as u8`
     let (hir_id, span) = if let Node::Expr(par_expr) = cx.tcx.parent_hir_node(hir_id)
-        && let ExprKind::Cast(_, _, _) = par_expr.kind
+        && let ExprKind::Cast(_, _) = par_expr.kind
     {
         (par_expr.hir_id, par_expr.span)
     } else {

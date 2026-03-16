@@ -161,12 +161,14 @@ impl<'hir> LoweringContext<'_, 'hir> {
             hir_id: self.next_id(),
             kind: hir::TyKind::InferDelegation(sig_id, hir::InferDelegationKind::Input(arg)),
             span,
+            compartments: &[],
         }));
 
         let output = self.arena.alloc(hir::Ty {
             hir_id: self.next_id(),
             kind: hir::TyKind::InferDelegation(sig_id, hir::InferDelegationKind::Output),
             span,
+            compartments: &[],
         });
 
         self.arena.alloc(hir::FnDecl {
