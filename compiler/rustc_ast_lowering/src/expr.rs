@@ -154,11 +154,22 @@ impl<'hir> LoweringContext<'_, 'hir> {
                 }
                 ExprKind::Cast(expr, ty) => {
                     let expr = self.lower_expr(expr);
+
+                    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                        println!("DEBUG: Cast lowering - ty.compartments.is_empty() = {}", ty.compartments.is_empty());
+                        println!("DEBUG: ty.compartments = {:?}", ty.compartments);
+                    }
+
                     let hir_compartments = if ty.compartments.is_empty() {
                         self.extract_compartments_from_attrs(None)
                     } else {
                         self.arena.alloc_from_iter(ty.compartments.iter().copied())
                     };
+
+                    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                        println!("DEBUG: hir_compartments = {:?}", hir_compartments);
+                    }
+
                     let hir_ty_lowered = self.lower_ty_direct(ty, ImplTraitContext::Disallowed(ImplTraitPosition::Cast));
                     let hir_ty = hir::Ty {
                         hir_id: hir_ty_lowered.hir_id,

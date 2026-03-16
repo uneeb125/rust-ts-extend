@@ -1318,14 +1318,24 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
 
         if compartments.is_empty() {
             if let Some(&attrs) = self.attrs.get(&hir::ItemLocalId::from_u32(0)) {
+                if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                    println!("DEBUG: Extracting from owner attributes (ItemLocalId 0)");
+                }
                 for attr in attrs {
                     if let hir::Attribute::Parsed(hir::attrs::AttributeKind::Compartments(items, span)) = attr {
+                        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                            println!("DEBUG: Found Compartments attribute on owner");
+                        }
                         for (symbol, _) in items {
                             compartments.push(rustc_span::Ident::new(*symbol, *span));
                         }
                     }
                 }
             }
+        }
+
+        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+            println!("DEBUG: extract_compartments_from_attrs result: {:?}", compartments);
         }
 
         self.arena.alloc_from_iter(compartments)
@@ -1520,7 +1530,17 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             TyKind::Dummy => panic!("`TyKind::Dummy` should never be lowered"),
         };
 
-        hir::Ty { kind, span: self.lower_span(t.span), hir_id: self.lower_node_id(t.id), compartments: &[] }
+        let compartments = if t.compartments.is_empty() {
+            self.extract_compartments_from_attrs(None)
+        } else {
+            self.arena.alloc_from_iter(t.compartments.iter().copied())
+        };
+
+        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+            println!("DEBUG: lower_ty_direct creating Ty with compartments: {:?}", compartments);
+        }
+
+        hir::Ty { kind, span: self.lower_span(t.span), hir_id: self.lower_node_id(t.id), compartments }
     }
 
     fn lower_ty_direct_lifetime(
