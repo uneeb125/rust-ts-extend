@@ -1462,6 +1462,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // This is (basically) inlined `check_expr_coercible_to_type`, but we want
         // to suggest an additional fixup here in `suggest_deref_binop`.
         let rhs_ty = self.check_expr_with_hint(rhs, lhs_ty);
+        
+        if let Some(rhs_compartments) = self.typeck_results.borrow().node_compartments().get(rhs.hir_id) {
+            let caller_compartments = self.root_ctxt.current_compartments.clone();
+            if !rhs_compartments.tags.is_empty() && !caller_compartments.can_access(rhs_compartments) {
+                self.tcx.dcx().span_err(
+                    rhs.span,
+                    format!(
+                        "cannot assign value with compartments ({}) - not available in current scope",
+                        rhs_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                    ),
+                );
+            }
+        }
+        
         if let Err(mut diag) =
             self.demand_coerce_diag(rhs, rhs_ty, lhs_ty, Some(lhs), AllowTwoPhase::No)
         {

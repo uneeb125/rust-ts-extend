@@ -626,7 +626,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         }
 
-        fn_sig.output()
+        let output = fn_sig.output();
+
+        if let Some(def_id) = def_id {
+            if let Some(local_def_id) = def_id.as_local() {
+                let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                    self.tcx,
+                    local_def_id,
+                );
+                
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                    call_expr.hir_id,
+                    fn_compartments,
+                );
+            }
+        }
+
+        output
     }
 
     /// Attempts to reinterpret `method(rcvr, args...)` as `rcvr.method(args...)`
