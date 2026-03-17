@@ -640,6 +640,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let output = fn_sig.output();
 
+        // Record function's compartments on the call expression
+        // The return value inherits the function's compartments
         if let Some(def_id) = def_id {
             if let Some(local_def_id) = def_id.as_local() {
                 let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
@@ -647,15 +649,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     local_def_id,
                 );
                 
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Recording function call compartment: call_expr.hir_id={:?}, compartments={:?}", 
-                        call_expr.hir_id, fn_compartments.tags);
+                if !fn_compartments.tags.is_empty() {
+                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                        call_expr.hir_id,
+                        fn_compartments,
+                    );
                 }
-                
-                self.typeck_results.borrow_mut().node_compartments_mut().insert(
-                    call_expr.hir_id,
-                    fn_compartments,
-                );
             }
         }
 
