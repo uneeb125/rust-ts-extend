@@ -9,7 +9,6 @@ use rustc_hir::{self as hir, HirId, LangItem};
 use rustc_hir_analysis::autoderef::Autoderef;
 use rustc_infer::infer::BoundRegionConversionTime;
 use rustc_infer::traits::{Obligation, ObligationCause, ObligationCauseCode};
-use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::adjustment::{
     Adjust, Adjustment, AllowTwoPhase, AutoBorrow, AutoBorrowMutability,
 };
@@ -592,40 +591,48 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 );
 
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Function call to {:?} with compartments: {:?}", def_id, fn_compartments.tags);
+                    eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
                 }
 
-                // Check if caller can access callee's compartments
-                let caller_compartments = self.root_ctxt.get_current_compartments();
+                // Check if function's compartments are accessible from current scope
+                let current_compartments = self.root_ctxt.get_current_compartments();
                 
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Caller compartments: {:?}", caller_compartments.tags);
+                    eprintln!("DEBUG: Current scope compartments: {:?}", current_compartments.tags);
                 }
 
-                // Check if callee's compartments are accessible from caller
-                if !fn_compartments.tags.is_empty() && !caller_compartments.can_access(&fn_compartments) {
+                if !fn_compartments.tags.is_empty() && !current_compartments.can_access(&fn_compartments) {
                     self.tcx.dcx().span_err(
                         callee_expr.span,
                         format!(
                             "cannot call function with compartments ({}) - not available in current scope (available: {})",
                             fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                            caller_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                         ),
                     );
                 }
 
+                // Check if argument types' compartments are allowed by function's declared compartments
                 for arg in arg_exprs {
-                    if let hir::ExprKind::Type(_, ty) = &arg.kind {
-                        let arg_compartments = CompartmentSet::from_iter(
-                            ty.compartments.iter().map(|ident| ident.name)
-                        );
+                    let arg_ty = self.typeck_results.borrow().expr_ty(arg);
+                    
+                    // Get compartments from the argument's type (for ADT types)
+                    if let ty::Adt(adt_def, _) = arg_ty.kind() {
+                        let type_def_id = adt_def.did();
+                        let type_compartments = self.tcx.compartment_set(type_def_id);
+                        
+                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                            eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
+                                self.tcx.def_path_str(type_def_id), type_compartments.tags);
+                        }
 
-                        if !arg_compartments.tags.is_empty() && !fn_compartments.can_access(&arg_compartments) {
+                        // Check if the argument's type compartments are allowed by function's compartments
+                        if !type_compartments.tags.is_empty() && !fn_compartments.can_access(&type_compartments) {
                             self.tcx.dcx().span_err(
                                 arg.span,
                                 format!(
-                                    "argument has compartments ({}) that are not allowed by function's compartments ({})",
-                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    "argument type has compartments ({}) that are not allowed by function's compartments ({})",
+                                    type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                     fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                                 ),
                             );
