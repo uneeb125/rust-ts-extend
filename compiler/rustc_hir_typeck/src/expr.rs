@@ -55,6 +55,8 @@ use crate::{
     TupleArgumentsFlag, cast, fatally_break_rust, report_unexpected_variant_res, type_error_struct,
 };
 
+use crate::cast::is_inside_unsafe_context;
+
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub(crate) fn precedence(&self, expr: &hir::Expr<'_>) -> ExprPrecedence {
         let has_attr = |id: HirId| -> bool {
@@ -1473,22 +1475,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // to suggest an additional fixup here in `suggest_deref_binop`.
         let rhs_ty = self.check_expr_with_hint(rhs, lhs_ty);
         
-        // Check compartments for assignment
-        // For cast expressions, compartments come from the Ty in the cast
-        // For other expressions, use node_compartments
-        let mut rhs_compartments = CompartmentSet::empty();
-        
-        if let hir::ExprKind::Cast(_, ty) = &rhs.kind {
+        let rhs_compartments = if let hir::ExprKind::Cast(_, ty) = &rhs.kind {
             // Cast expression - get compartments from Ty
-            rhs_compartments = CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name));
-        } else if let Some(node_compartments) = self.typeck_results.borrow().node_compartments().get(rhs.hir_id) {
-            // Non-cast expression - use recorded node_compartments
-            rhs_compartments = node_compartments.clone();
-        }
+            CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
+        } else {
+            // Look for compartments in nested expressions
+            self.find_compartments_in_expr(rhs)
+        };
 
         let current_compartments = self.root_ctxt.current_compartments.clone();
         
-        if !rhs_compartments.tags.is_empty() && !current_compartments.can_access(&rhs_compartments) {
+        // Check if assignment is inside unsafe block
+        let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
+        
+        if !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access(&rhs_compartments) {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(

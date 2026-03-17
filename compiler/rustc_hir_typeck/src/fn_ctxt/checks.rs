@@ -75,7 +75,7 @@ pub(crate) enum DivergingBlockBehavior {
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Find compartments in nested expressions (for unsafe blocks, blocks, etc.)
-    fn find_compartments_in_expr(&self, expr: &hir::Expr<'tcx>) -> CompartmentSet {
+    pub(in super::super) fn find_compartments_in_expr(&self, expr: &hir::Expr<'tcx>) -> CompartmentSet {
         // First check if this expression has compartments recorded directly
         if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
             return compartment;
@@ -956,25 +956,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 init_compartments = self.find_compartments_in_expr(init);
             }
             
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: check_decl: init hir_id: {:?}, init compartments: {:?}, init kind: {:?}", 
-                    init.hir_id, init_compartments.tags, std::mem::discriminant(&init.kind));
-            }
-            
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: check_decl: init compartments: {:?}, init kind: {:?}", 
-                    init_compartments.tags, std::mem::discriminant(&init.kind));
-            }
-            
-            // Check if the initializer's compartments are accessible from current scope
+            // Check if initializer's compartments are accessible from current scope
             // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
-            
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: check_decl: is_unsafe: {}, current compartments: {:?}", 
-                    is_unsafe, current_compartments.tags);
-            }
             
             if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
                 self.tcx.dcx().span_err(
