@@ -411,6 +411,14 @@ mir_build_unsafe_binder_cast_requires_unsafe_unsafe_op_in_unsafe_fn_allowed =
     .note = casting to or from an `unsafe<...>` binder type is unsafe since it erases lifetime
         information that may be required to uphold safety guarantees of a type
 
+mir_build_compartment_cast_requires_unsafe =
+    compartment cast is unsafe and requires unsafe block
+    .label = compartment cast
+
+mir_build_compartment_cast_requires_unsafe_unsafe_op_in_unsafe_fn_allowed =
+    compartment cast is unsafe and requires unsafe block or unsafe fn
+    .label = compartment cast
+
 mir_build_unsafe_field_requires_unsafe =
     use of unsafe field is unsafe and requires unsafe block
     .note = unsafe fields may carry library invariants

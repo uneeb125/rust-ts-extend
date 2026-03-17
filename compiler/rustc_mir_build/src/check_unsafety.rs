@@ -430,8 +430,13 @@ impl<'a, 'tcx> Visitor<'a, 'tcx> for UnsafetyVisitor<'a, 'tcx> {
             ExprKind::Field { .. }
             | ExprKind::VarRef { .. }
             | ExprKind::UpvarRef { .. }
-            | ExprKind::Scope { .. }
-            | ExprKind::Cast { .. } => {}
+            | ExprKind::Scope { .. } => {}
+
+            ExprKind::Cast { .. } => {
+                if !expr.compartment.tags.is_empty() {
+                    self.requires_unsafe(expr.span, CompartmentCast);
+                }
+            }
 
             ExprKind::RawBorrow { .. }
             | ExprKind::Adt { .. }
@@ -771,6 +776,7 @@ enum UnsafeOpKind {
         build_enabled: Vec<Symbol>,
     },
     UnsafeBinderCast,
+    CompartmentCast,
 }
 
 use UnsafeOpKind::*;
@@ -944,6 +950,15 @@ impl UnsafeOpKind {
                 hir_id,
                 span,
                 UnsafeOpInUnsafeFnUnsafeBinderCastRequiresUnsafe {
+                    span,
+                    unsafe_not_inherited_note,
+                },
+            ),
+            CompartmentCast => tcx.emit_node_span_lint(
+                UNSAFE_OP_IN_UNSAFE_FN,
+                hir_id,
+                span,
+                UnsafeOpInUnsafeFnCompartmentCastRequiresUnsafe {
                     span,
                     unsafe_not_inherited_note,
                 },
@@ -1164,6 +1179,15 @@ impl UnsafeOpKind {
             }
             UnsafeBinderCast => {
                 dcx.emit_err(UnsafeBinderCastRequiresUnsafe { span, unsafe_not_inherited_note });
+            }
+            CompartmentCast if unsafe_op_in_unsafe_fn_allowed => {
+                dcx.emit_err(CompartmentCastRequiresUnsafeUnsafeOpInUnsafeFnAllowed {
+                    span,
+                    unsafe_not_inherited_note,
+                });
+            }
+            CompartmentCast => {
+                dcx.emit_err(CompartmentCastRequiresUnsafe { span, unsafe_not_inherited_note });
             }
         }
     }

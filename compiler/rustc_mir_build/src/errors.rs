@@ -173,6 +173,15 @@ pub(crate) struct UnsafeOpInUnsafeFnUnsafeBinderCastRequiresUnsafe {
 }
 
 #[derive(LintDiagnostic)]
+#[diag(mir_build_compartment_cast_requires_unsafe, code = E0133)]
+pub(crate) struct UnsafeOpInUnsafeFnCompartmentCastRequiresUnsafe {
+    #[label]
+    pub(crate) span: Span,
+    #[subdiagnostic]
+    pub(crate) unsafe_not_inherited_note: Option<UnsafeNotInheritedLintNote>,
+}
+
+#[derive(LintDiagnostic)]
 #[diag(mir_build_unsafe_op_in_unsafe_fn_call_to_fn_with_requires_unsafe, code = E0133)]
 #[help]
 pub(crate) struct UnsafeOpInUnsafeFnCallToFunctionWithRequiresUnsafe {
@@ -525,6 +534,32 @@ pub(crate) struct UnsafeBinderCastRequiresUnsafe {
     code = E0133,
 )]
 pub(crate) struct UnsafeBinderCastRequiresUnsafeUnsafeOpInUnsafeFnAllowed {
+    #[primary_span]
+    #[label]
+    pub(crate) span: Span,
+    #[subdiagnostic]
+    pub(crate) unsafe_not_inherited_note: Option<UnsafeNotInheritedNote>,
+}
+
+#[derive(Diagnostic)]
+#[diag(
+    mir_build_compartment_cast_requires_unsafe,
+    code = E0133,
+)]
+pub(crate) struct CompartmentCastRequiresUnsafe {
+    #[primary_span]
+    #[label]
+    pub(crate) span: Span,
+    #[subdiagnostic]
+    pub(crate) unsafe_not_inherited_note: Option<UnsafeNotInheritedNote>,
+}
+
+#[derive(Diagnostic)]
+#[diag(
+    mir_build_compartment_cast_requires_unsafe_unsafe_op_in_unsafe_fn_allowed,
+    code = E0133,
+)]
+pub(crate) struct CompartmentCastRequiresUnsafeUnsafeOpInUnsafeFnAllowed {
     #[primary_span]
     #[label]
     pub(crate) span: Span,
