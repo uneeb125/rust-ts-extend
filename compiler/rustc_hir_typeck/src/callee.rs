@@ -594,24 +594,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
                 }
 
-                // Check if function's compartments are accessible from current scope
-                let current_compartments = self.root_ctxt.get_current_compartments();
-                
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Current scope compartments: {:?}", current_compartments.tags);
-                }
-
-                if !fn_compartments.tags.is_empty() && !current_compartments.can_access(&fn_compartments) {
-                    self.tcx.dcx().span_err(
-                        callee_expr.span,
-                        format!(
-                            "cannot call function with compartments ({}) - not available in current scope (available: {})",
-                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                        ),
-                    );
-                }
-
                 // Check if argument types' compartments are allowed by function's declared compartments
                 for arg in arg_exprs {
                     let arg_ty = self.typeck_results.borrow().expr_ty(arg);
