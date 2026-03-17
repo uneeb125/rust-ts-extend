@@ -591,6 +591,29 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     local_def_id,
                 );
 
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Function call to {:?} with compartments: {:?}", def_id, fn_compartments.tags);
+                }
+
+                // Check if caller can access callee's compartments
+                let caller_compartments = self.root_ctxt.get_current_compartments();
+                
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Caller compartments: {:?}", caller_compartments.tags);
+                }
+
+                // Check if callee's compartments are accessible from caller
+                if !fn_compartments.tags.is_empty() && !caller_compartments.can_access(&fn_compartments) {
+                    self.tcx.dcx().span_err(
+                        callee_expr.span,
+                        format!(
+                            "cannot call function with compartments ({}) - not available in current scope (available: {})",
+                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            caller_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                        ),
+                    );
+                }
+
                 for arg in arg_exprs {
                     if let hir::ExprKind::Type(_, ty) = &arg.kind {
                         let arg_compartments = CompartmentSet::from_iter(

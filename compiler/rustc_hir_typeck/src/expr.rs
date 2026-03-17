@@ -1679,6 +1679,43 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 self.check_call_abi(method.sig.abi, expr.span);
 
+                // Check compartments for method call
+                if let Some(def_id) = method.def_id.as_local() {
+                    let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                        self.tcx,
+                        def_id,
+                    );
+
+                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                        eprintln!("DEBUG: Method call to {:?} with compartments: {:?}", def_id, fn_compartments.tags);
+                    }
+
+                    // Check if caller can access callee's compartments
+                    let caller_compartments = self.root_ctxt.get_current_compartments();
+                    
+                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                        eprintln!("DEBUG: Caller compartments: {:?}", caller_compartments.tags);
+                    }
+
+                    // Check if callee's compartments are accessible from caller
+                    if !fn_compartments.tags.is_empty() && !caller_compartments.can_access(&fn_compartments) {
+                        self.tcx.dcx().span_err(
+                            segment.ident.span,
+                            format!(
+                                "cannot call method with compartments ({}) - not available in current scope (available: {})",
+                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                caller_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            ),
+                        );
+                    }
+
+                    // Record compartments for this method call
+                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                        expr.hir_id,
+                        fn_compartments,
+                    );
+                }
+
                 method.sig.output()
             }
             Err(error) => {
