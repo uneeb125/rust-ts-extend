@@ -223,6 +223,28 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             .unwrap_or_else(CompartmentSet::default)
     }
 
+    /// Get compartments from an impl block or trait impl for a method
+    pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
+        let def_id = def_id.to_def_id();
+        
+        // For methods, look at the impl block they're associated with
+        if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+            if let Some(local_impl_id) = impl_def_id.as_local() {
+                let impl_compartments = Self::get_function_compartments(tcx, local_impl_id);
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: get_impl_method_compartments: found impl block {:?} with compartments: {:?}", impl_def_id, impl_compartments.tags);
+                }
+                return impl_compartments;
+            }
+        }
+        
+        // Fall back to function's own compartments
+        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+            eprintln!("DEBUG: get_impl_method_compartments: using function's own compartments");
+        }
+        Self::get_function_compartments(tcx, def_id.as_local().unwrap())
+    }
+
     #[allow(dead_code)]
     pub(super) fn check_compartments_allowed(
         &self,

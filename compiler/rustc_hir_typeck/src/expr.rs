@@ -1681,7 +1681,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 // Check compartments for method call
                 if let Some(def_id) = method.def_id.as_local() {
-                    let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                    let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
                         self.tcx,
                         def_id,
                     );
