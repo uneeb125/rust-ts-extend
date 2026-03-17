@@ -875,6 +875,32 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Type check the initializer.
         if let Some(ref init) = decl.init {
             let init_ty = self.check_decl_initializer(decl.hir_id, decl.pat, init);
+            
+            // Get compartments from initializer (cast or node_compartments)
+            let mut init_compartments = CompartmentSet::empty();
+            if let hir::ExprKind::Cast(_, ty) = &init.kind {
+                // Cast expression - get compartments from Ty
+                init_compartments = CompartmentSet::from_iter(
+                    ty.compartments.iter().map(|ident| ident.name)
+                );
+            } else if let Some(node_compartment) = self.typeck_results.borrow().node_compartment(init.hir_id).cloned() {
+                // Non-cast expression - use recorded node_compartments
+                init_compartments = node_compartment;
+            }
+            
+            // Check if the initializer's compartments are accessible from current scope
+            let current_compartments = self.root_ctxt.get_current_compartments();
+            if !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
+                self.tcx.dcx().span_err(
+                    init.span,
+                    format!(
+                        "cannot assign value with compartments ({}) - not available in current scope (available: {})",
+                        init_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                    ),
+                );
+            }
+            
             // Propagate compartment from initializer to pattern
             let compartment = self.typeck_results.borrow().node_compartment(init.hir_id).cloned();
             if let Some(compartment) = compartment {

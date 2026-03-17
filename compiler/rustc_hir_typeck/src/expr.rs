@@ -1464,17 +1464,30 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // to suggest an additional fixup here in `suggest_deref_binop`.
         let rhs_ty = self.check_expr_with_hint(rhs, lhs_ty);
         
-        if let Some(rhs_compartments) = self.typeck_results.borrow().node_compartments().get(rhs.hir_id) {
-            let caller_compartments = self.root_ctxt.current_compartments.clone();
-            if !rhs_compartments.tags.is_empty() && !caller_compartments.can_access(rhs_compartments) {
-                self.tcx.dcx().span_err(
-                    rhs.span,
-                    format!(
-                        "cannot assign value with compartments ({}) - not available in current scope",
-                        rhs_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                    ),
-                );
-            }
+        // Check compartments for assignment
+        // For cast expressions, compartments come from the Ty in the cast
+        // For other expressions, use node_compartments
+        let mut rhs_compartments = CompartmentSet::empty();
+        
+        if let hir::ExprKind::Cast(_, ty) = &rhs.kind {
+            // Cast expression - get compartments from Ty
+            rhs_compartments = CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name));
+        } else if let Some(node_compartments) = self.typeck_results.borrow().node_compartments().get(rhs.hir_id) {
+            // Non-cast expression - use recorded node_compartments
+            rhs_compartments = node_compartments.clone();
+        }
+
+        let current_compartments = self.root_ctxt.current_compartments.clone();
+        
+        if !rhs_compartments.tags.is_empty() && !current_compartments.can_access(&rhs_compartments) {
+            self.tcx.dcx().span_err(
+                rhs.span,
+                format!(
+                    "cannot assign value with compartments ({}) - not available in current scope (available: {})",
+                    rhs_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                    current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                ),
+            );
         }
         
         if let Err(mut diag) =
