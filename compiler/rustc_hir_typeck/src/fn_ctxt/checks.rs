@@ -38,6 +38,7 @@ use crate::inline_asm::InlineAsmCtxt;
 use crate::method::probe::IsSuggestion;
 use crate::method::probe::Mode::MethodCall;
 use crate::method::probe::ProbeScope::TraitsInScope;
+use crate::cast::is_inside_unsafe_context;
 use crate::{
     BreakableCtxt, Diverges, Expectation, FnCtxt, GatherLocalsVisitor, LoweredTy, Needs,
     TupleArgumentsFlag, errors, struct_span_code_err,
@@ -889,8 +890,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             
             // Check if the initializer's compartments are accessible from current scope
+            // Skip check if inside unsafe block
+            let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
-            if !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
+            if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(

@@ -241,7 +241,7 @@ pub fn check_cast<'tcx>(
     }
 }
 
-fn is_inside_unsafe_context(tcx: TyCtxt<'_>, hir_id: hir::HirId) -> bool {
+pub(super) fn is_inside_unsafe_context(tcx: TyCtxt<'_>, hir_id: hir::HirId) -> bool {
     for (_, node) in tcx.hir_parent_iter(hir_id) {
         match node {
             hir::Node::Block(block) if matches!(block.rules, hir::BlockCheckMode::UnsafeBlock(_)) => {
