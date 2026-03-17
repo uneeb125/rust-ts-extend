@@ -160,11 +160,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         println!("DEBUG: ty.compartments = {:?}", ty.compartments);
                     }
 
-                    let hir_compartments = if ty.compartments.is_empty() {
-                        self.extract_compartments_from_attrs(None)
-                    } else {
-                        self.arena.alloc_from_iter(ty.compartments.iter().copied())
-                    };
+                    let hir_compartments = self.arena.alloc_from_iter(ty.compartments.iter().copied());
 
                     if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                         println!("DEBUG: hir_compartments = {:?}", hir_compartments);

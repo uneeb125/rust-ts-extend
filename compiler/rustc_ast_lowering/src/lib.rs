@@ -1530,11 +1530,7 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             TyKind::Dummy => panic!("`TyKind::Dummy` should never be lowered"),
         };
 
-        let compartments = if t.compartments.is_empty() {
-            self.extract_compartments_from_attrs(None)
-        } else {
-            self.arena.alloc_from_iter(t.compartments.iter().copied())
-        };
+        let compartments = self.arena.alloc_from_iter(t.compartments.iter().copied());
 
         if std::env::var("MY_DEBUG_COLLECT").is_ok() {
             println!("DEBUG: lower_ty_direct creating Ty with compartments: {:?}", compartments);
