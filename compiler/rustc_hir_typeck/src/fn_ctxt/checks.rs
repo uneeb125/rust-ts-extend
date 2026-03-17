@@ -81,6 +81,30 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             return compartment;
         }
         
+        // For Path expressions (variable references), look up compartments from the variable's definition
+        if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &expr.kind {
+            let target_hir_id = match path.res {
+                // Local variable - the HirId is directly in the Res::Local
+                hir::def::Res::Local(var_hir_id) => Some(var_hir_id),
+                // DefId - convert to HirId if local
+                hir::def::Res::Def(_, def_id) if def_id.as_local().is_some() => {
+                    Some(self.tcx.local_def_id_to_hir_id(def_id.as_local().unwrap()))
+                }
+                _ => None,
+            };
+            
+            if let Some(target_hir_id) = target_hir_id {
+                // Only look up if the HirId has the same owner (same body context)
+                let typeck_owner = self.typeck_results.borrow().hir_owner;
+                if target_hir_id.owner == typeck_owner {
+                    // Check node_compartment for the variable's definition
+                    if let Some(compartment) = self.typeck_results.borrow().node_compartment(target_hir_id).cloned() {
+                        return compartment;
+                    }
+                }
+            }
+        }
+        
         // Otherwise look in sub-expressions
         match &expr.kind {
             hir::ExprKind::Cast(_, ty) => {
@@ -136,6 +160,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             hir::ExprKind::DropTemps(e) => {
                 self.find_compartments_in_expr(e)
+            }
+            hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                // Variable reference - look up compartments from the variable's definition
+                if let Some(res) = path.res.opt_def_id() {
+                    if let Some(local_id) = res.as_local() {
+                        let hir_id = self.tcx.local_def_id_to_hir_id(local_id);
+                        // Only look up if the HirId has the same owner (same body context)
+                        let typeck_owner = self.typeck_results.borrow().hir_owner;
+                        if hir_id.owner == typeck_owner {
+                            // Check node_compartment for the variable's definition
+                            if let Some(compartment) = self.typeck_results.borrow().node_compartment(hir_id).cloned() {
+                                return compartment;
+                            }
+                        }
+                    }
+                }
+                CompartmentSet::default()
             }
             _ => CompartmentSet::default(),
         }
@@ -954,6 +995,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             } else {
                 // Look for compartments in nested expressions (unsafe blocks, blocks, etc.)
                 init_compartments = self.find_compartments_in_expr(init);
+            }
+            
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: check_decl: looking up init.hir_id={:?}", init.hir_id);
             }
             
             // Check if initializer's compartments are accessible from current scope

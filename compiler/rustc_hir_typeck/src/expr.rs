@@ -1499,6 +1499,30 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             );
         }
         
+        // Record compartments on the LHS variable (for subsequent reads)
+        // Use the rhs expression's compartments
+        if !rhs_compartments.tags.is_empty() {
+            // Try to get the HirId for the LHS variable definition
+            if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &lhs.kind {
+                let target_hir_id = match path.res {
+                    // Local variable - the HirId is directly in the Res::Local
+                    hir::def::Res::Local(var_hir_id) => Some(var_hir_id),
+                    // DefId - convert to HirId if local
+                    hir::def::Res::Def(_, def_id) if def_id.as_local().is_some() => {
+                        Some(self.tcx.local_def_id_to_hir_id(def_id.as_local().unwrap()))
+                    }
+                    _ => None,
+                };
+                
+                if let Some(target_hir_id) = target_hir_id {
+                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                        target_hir_id,
+                        rhs_compartments.clone(),
+                    );
+                }
+            }
+        }
+        
         if let Err(mut diag) =
             self.demand_coerce_diag(rhs, rhs_ty, lhs_ty, Some(lhs), AllowTwoPhase::No)
         {
