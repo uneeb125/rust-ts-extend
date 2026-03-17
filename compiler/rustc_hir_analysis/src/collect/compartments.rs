@@ -42,5 +42,10 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
         println!("DEBUG: Extracted compartments: {:?}", raw_tags);
     }
 
+    // Return default compartment if none specified (consistent with functions)
+    if raw_tags.is_empty() {
+        return CompartmentSet::default();
+    }
+
     CompartmentSet::from_iter(raw_tags)
 }
