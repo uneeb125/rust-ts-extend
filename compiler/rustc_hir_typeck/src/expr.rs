@@ -2052,11 +2052,43 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Prohibit struct expressions when non-exhaustive flag is set.
         let adt = adt_ty.ty_adt_def().expect("`check_struct_path` returned non-ADT type");
- 
-        // Check compartment access for struct definition and fields
-        // Disabled - using new argument/return value checking instead
-        // let struct_set = self.check_compartment_access(adt.did(), expr.span, "struct");
-        // self.record_compartment(expr.hir_id, struct_set);
+
+        // Check compartment access for struct definition
+        let struct_def_id = adt.did();
+        let struct_compartments = self.tcx.compartment_set(struct_def_id);
+        
+        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+            eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}", 
+                self.tcx.def_path_str(struct_def_id), struct_compartments.tags);
+        }
+
+        if !struct_compartments.tags.is_empty() {
+            let current_compartments = self.root_ctxt.get_current_compartments();
+            
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
+            }
+
+            if !current_compartments.can_access(&struct_compartments) {
+                self.tcx.dcx().span_err(
+                    expr.span,
+                    format!(
+                        "cannot create instance of struct with compartments ({}) - not available in current scope (available: {})",
+                        struct_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        if current_compartments.tags.is_empty() { 
+                            "none".to_string() 
+                        } else { 
+                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ") 
+                        }
+                    ),
+                );
+            }
+        }
+
+        // Record the struct's compartments for this expression
+        self.typeck_results.borrow_mut()
+            .node_compartments_mut()
+            .insert(expr.hir_id, struct_compartments.clone());
  
         // Check compartment access for each field being initialized
         for field in fields {
