@@ -767,13 +767,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let tcx = self.tcx;
         let (res, opt_ty, segs) =
             self.resolve_ty_and_res_fully_qualified_call(qpath, expr.hir_id, expr.span);
-
+ 
         // Enforce compartment access for path expressions
-        if let Some(def_id) = res.opt_def_id() {
-            let set = self.check_compartment_access(def_id, expr.span, "item");
-            self.record_compartment(expr.hir_id, set);
-        }
-
+        // Disabled - using new argument/return value checking instead
+        // if let Some(def_id) = res.opt_def_id() {
+        //     let set = self.check_compartment_access(def_id, expr.span, "item");
+        //     self.record_compartment(expr.hir_id, set);
+        // }
+ 
         let ty = match res {
             Res::Err => {
                 self.suggest_assoc_method_call(segs);
@@ -2014,23 +2015,25 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Prohibit struct expressions when non-exhaustive flag is set.
         let adt = adt_ty.ty_adt_def().expect("`check_struct_path` returned non-ADT type");
-
+ 
         // Check compartment access for struct definition and fields
-        let struct_set = self.check_compartment_access(adt.did(), expr.span, "struct");
-        self.record_compartment(expr.hir_id, struct_set);
-
+        // Disabled - using new argument/return value checking instead
+        // let struct_set = self.check_compartment_access(adt.did(), expr.span, "struct");
+        // self.record_compartment(expr.hir_id, struct_set);
+ 
         // Check compartment access for each field being initialized
         for field in fields {
             // Find field definition by name
-            if let Some((_, field_def)) = variant
+            if let Some((_, _field_def)) = variant
                 .fields
                 .iter_enumerated()
                 .find(|(_, f)| f.ident(self.tcx).normalize_to_macros_2_0() == field.ident)
             {
-                self.check_compartment_access(field_def.did, field.span, "field");
+                // Disabled - using new argument/return value checking instead
+                // self.check_compartment_access(field_def.did, field.span, "field");
             }
         }
-
+ 
         if variant.field_list_has_applicable_non_exhaustive() {
             self.dcx()
                 .emit_err(StructExprNonExhaustive { span: expr.span, what: adt.variant_descr() });

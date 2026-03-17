@@ -189,14 +189,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
         self.typeck_results.borrow_mut().node_compartments_mut().insert(hir_id, set);
     }
-
+ 
     // Get the compartment of the function we are inside
+    #[allow(dead_code)]
     pub(crate) fn current_compartment(&self) -> CompartmentSet {
         let owner = self.body_id.to_def_id();
         self.tcx.compartment_set(owner).clone()
     }
-
+ 
     // Central enforcement logic
+    #[allow(dead_code)]
     pub(crate) fn check_compartment_access(
         &self,
         target_def: DefId,
