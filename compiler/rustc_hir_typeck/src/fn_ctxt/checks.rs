@@ -74,6 +74,73 @@ pub(crate) enum DivergingBlockBehavior {
 }
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
+    /// Find compartments in nested expressions (for unsafe blocks, blocks, etc.)
+    fn find_compartments_in_expr(&self, expr: &hir::Expr<'tcx>) -> CompartmentSet {
+        // First check if this expression has compartments recorded directly
+        if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
+            return compartment;
+        }
+        
+        // Otherwise look in sub-expressions
+        match &expr.kind {
+            hir::ExprKind::Cast(_, ty) => {
+                // Cast expression - get compartments from Ty
+                CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
+            }
+            hir::ExprKind::Unary(_, subexpr) => {
+                // Unary expressions (like unsafe {})
+                self.find_compartments_in_expr(subexpr)
+            }
+            hir::ExprKind::Block(block, _) => {
+                // Block expression - check the last expression in the block
+                if let Some(expr) = block.expr {
+                    self.find_compartments_in_expr(expr)
+                } else {
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::Call(_callee, args) => {
+                // For calls, check if the callee has compartments (via node_compartment)
+                // The callee itself won't have compartments, but the call expression should
+                if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
+                    compartment
+                } else {
+                    // Check each argument
+                    for arg in *args {
+                        let comp = self.find_compartments_in_expr(arg);
+                        if !comp.tags.is_empty() {
+                            return comp;
+                        }
+                    }
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::MethodCall(_, receiver, args, _) => {
+                // Method call
+                if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
+                    compartment
+                } else {
+                    // Check receiver and args
+                    let comp = self.find_compartments_in_expr(receiver);
+                    if !comp.tags.is_empty() {
+                        return comp;
+                    }
+                    for arg in *args {
+                        let comp = self.find_compartments_in_expr(arg);
+                        if !comp.tags.is_empty() {
+                            return comp;
+                        }
+                    }
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::DropTemps(e) => {
+                self.find_compartments_in_expr(e)
+            }
+            _ => CompartmentSet::default(),
+        }
+    }
+    
     pub(in super::super) fn check_casts(&mut self) {
         // don't hold the borrow to deferred_cast_checks while checking to avoid borrow checker errors
         // when writing to `self.param_env`.
@@ -878,21 +945,37 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let init_ty = self.check_decl_initializer(decl.hir_id, decl.pat, init);
             
             // Get compartments from initializer (cast or node_compartments)
-            let mut init_compartments = CompartmentSet::empty();
+            let mut init_compartments = CompartmentSet::default();
             if let hir::ExprKind::Cast(_, ty) = &init.kind {
                 // Cast expression - get compartments from Ty
                 init_compartments = CompartmentSet::from_iter(
                     ty.compartments.iter().map(|ident| ident.name)
                 );
-            } else if let Some(node_compartment) = self.typeck_results.borrow().node_compartment(init.hir_id).cloned() {
-                // Non-cast expression - use recorded node_compartments
-                init_compartments = node_compartment;
+            } else {
+                // Look for compartments in nested expressions (unsafe blocks, blocks, etc.)
+                init_compartments = self.find_compartments_in_expr(init);
+            }
+            
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: check_decl: init hir_id: {:?}, init compartments: {:?}, init kind: {:?}", 
+                    init.hir_id, init_compartments.tags, std::mem::discriminant(&init.kind));
+            }
+            
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: check_decl: init compartments: {:?}, init kind: {:?}", 
+                    init_compartments.tags, std::mem::discriminant(&init.kind));
             }
             
             // Check if the initializer's compartments are accessible from current scope
-            // Skip check if inside unsafe block
+            // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
+            
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: check_decl: is_unsafe: {}, current compartments: {:?}", 
+                    is_unsafe, current_compartments.tags);
+            }
+            
             if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
                 self.tcx.dcx().span_err(
                     init.span,

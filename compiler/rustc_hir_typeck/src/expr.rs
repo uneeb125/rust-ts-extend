@@ -535,7 +535,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let tcx = self.tcx;
         match expr.kind {
-            ExprKind::Lit(ref lit) => self.check_expr_lit(lit, expected),
+            ExprKind::Lit(ref lit) => {
+                let ty = self.check_expr_lit(lit, expected);
+                // Assign current function's compartments to literals
+                let current_compartments = self.root_ctxt.get_current_compartments();
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                    expr.hir_id,
+                    current_compartments,
+                );
+                ty
+            }
             ExprKind::Binary(op, lhs, rhs) => self.check_expr_binop(expr, op, lhs, rhs, expected),
             ExprKind::Assign(lhs, rhs, span) => {
                 self.check_expr_assign(expr, expected, lhs, rhs, span)

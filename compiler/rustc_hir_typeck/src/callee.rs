@@ -647,6 +647,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     local_def_id,
                 );
                 
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Recording function call compartment: call_expr.hir_id={:?}, compartments={:?}", 
+                        call_expr.hir_id, fn_compartments.tags);
+                }
+                
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     call_expr.hir_id,
                     fn_compartments,
