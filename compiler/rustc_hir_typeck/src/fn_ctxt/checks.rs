@@ -161,6 +161,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             hir::ExprKind::DropTemps(e) => {
                 self.find_compartments_in_expr(e)
             }
+            hir::ExprKind::Closure(closure) => {
+                // Closures capture from their environment - check the closure body
+                let closure_body = self.tcx.hir_body(closure.body);
+                // The body can be a Path (variable reference) or Block
+                return self.find_compartments_in_expr(&closure_body.value);
+            }
             hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
                 // Variable reference - look up compartments from the variable's definition
                 if let Some(res) = path.res.opt_def_id() {

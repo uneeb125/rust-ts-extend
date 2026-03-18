@@ -677,6 +677,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     );
                 }
             }
+        } else {
+            // Closure call - get compartments from the callee expression itself
+            // (which was recorded when the closure was created)
+            if let Some(closure_compartments) = self.typeck_results.borrow().node_compartment(callee_expr.hir_id).cloned() {
+                if !closure_compartments.tags.is_empty() {
+                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                        call_expr.hir_id,
+                        closure_compartments,
+                    );
+                }
+            }
         }
 
         output
