@@ -664,18 +664,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Record function's compartments on the call expression
         // The return value inherits the function's compartments
         if let Some(def_id) = def_id {
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: Call has def_id={:?}", def_id);
-            }
             if let Some(local_def_id) = def_id.as_local() {
                 let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
                     self.tcx,
                     local_def_id,
                 );
-                
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Function compartments from def_id: {:?}", fn_compartments.tags);
-                }
                 
                 if !fn_compartments.tags.is_empty() {
                     self.typeck_results.borrow_mut().node_compartments_mut().insert(
@@ -687,22 +680,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         } else {
             // Closure call - get compartments from the callee expression itself
             // (which was recorded when the closure was created)
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: Closure call - callee_expr.hir_id={:?}", callee_expr.hir_id);
-            }
             if let Some(closure_compartments) = self.typeck_results.borrow().node_compartment(callee_expr.hir_id).cloned() {
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Found closure compartments: {:?}", closure_compartments.tags);
-                }
                 if !closure_compartments.tags.is_empty() {
                     self.typeck_results.borrow_mut().node_compartments_mut().insert(
                         call_expr.hir_id,
                         closure_compartments,
                     );
-                }
-            } else {
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: No closure compartments found for callee_expr.hir_id");
                 }
             }
         }
@@ -1022,9 +1005,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if let Some(target_hir_id) = target_hir_id {
                 // Look up compartments from the variable's definition
                 closure_compartment_found = self.typeck_results.borrow().node_compartment(target_hir_id).cloned();
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Resolved to target_hir_id={:?}, compartments={:?}", target_hir_id, closure_compartment_found.as_ref().map(|c| &c.tags));
-                }
             }
         }
         
@@ -1034,18 +1014,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
         
         if let Some(closure_compartments) = closure_compartment_found {
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: Deferred closure call - found compartments: {:?}", closure_compartments.tags);
-            }
             if !closure_compartments.tags.is_empty() {
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     call_expr.hir_id,
                     closure_compartments,
                 );
-            }
-        } else {
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: Deferred closure call - no compartments found");
             }
         }
 

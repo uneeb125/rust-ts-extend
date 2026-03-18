@@ -1003,10 +1003,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 init_compartments = self.find_compartments_in_expr(init);
             }
             
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: check_decl: looking up init.hir_id={:?}", init.hir_id);
-            }
-            
             // Check if initializer's compartments are accessible from current scope
             // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
@@ -1025,9 +1021,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             
             // Propagate compartment from initializer to pattern
             if !init_compartments.tags.is_empty() {
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Recording compartments {:?} on decl.pat.hir_id={:?}", init_compartments.tags, decl.pat.hir_id);
-                }
                 self.record_compartment(decl.pat.hir_id, init_compartments);
             }
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);
