@@ -80,7 +80,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
             return compartment;
         }
-        
+
         // For Path expressions (variable references), look up compartments from the variable's definition
         if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &expr.kind {
             let target_hir_id = match path.res {
@@ -92,7 +92,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 _ => None,
             };
-            
+
             if let Some(target_hir_id) = target_hir_id {
                 // Only look up if the HirId has the same owner (same body context)
                 let typeck_owner = self.typeck_results.borrow().hir_owner;
@@ -104,7 +104,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
             }
         }
-        
+
         // Otherwise look in sub-expressions
         match &expr.kind {
             hir::ExprKind::Cast(_, ty) => {
@@ -185,12 +185,27 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 CompartmentSet::default()
             }
             hir::ExprKind::Binary(_, left, right) => {
-                // Binary operation - check both operands
-                let comp = self.find_compartments_in_expr(left);
-                if !comp.tags.is_empty() {
-                    return comp;
+                // Binary operation - both operands must have compartments
+                let left_comp = self.find_compartments_in_expr(left);
+                let right_comp = self.find_compartments_in_expr(right);
+                // Both sides must have compartments
+                if left_comp.tags.is_empty() || right_comp.tags.is_empty() {
+                    return CompartmentSet::default();
                 }
-                self.find_compartments_in_expr(right)
+                // Both sides must have exact same compartments
+                if left_comp.matches(&right_comp) {
+                    return left_comp;
+                }
+                // Emit error for mismatched compartments in binary operation
+                self.tcx.dcx().span_err(
+                    expr.span,
+                    format!(
+                        "Compartments do not match, found ({}) for lhs and ({}) for rhs",
+                        left_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        right_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                    ),
+                );
+                CompartmentSet::default()
             }
             hir::ExprKind::Array(exprs) => {
                 // Array literal - check all elements
@@ -312,7 +327,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             _ => CompartmentSet::default(),
         }
     }
-    
+
     pub(in super::super) fn check_casts(&mut self) {
         // don't hold the borrow to deferred_cast_checks while checking to avoid borrow checker errors
         // when writing to `self.param_env`.
@@ -1115,7 +1130,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Type check the initializer.
         if let Some(ref init) = decl.init {
             let init_ty = self.check_decl_initializer(decl.hir_id, decl.pat, init);
-            
+
             // Get compartments from initializer (cast or node_compartments)
             let mut init_compartments = CompartmentSet::default();
             if let hir::ExprKind::Cast(_, ty) = &init.kind {
@@ -1127,12 +1142,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Look for compartments in nested expressions (unsafe blocks, blocks, etc.)
                 init_compartments = self.find_compartments_in_expr(init);
             }
-            
+
             // Check if initializer's compartments are accessible from current scope
             // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
-            
+
             if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
                 self.tcx.dcx().span_err(
                     init.span,
@@ -1143,9 +1158,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     ),
                 );
             }
-            
+
             // Propagate compartment from initializer to pattern
             if !init_compartments.tags.is_empty() {
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Recording compartments {:?} on pattern hir_id {:?}", init_compartments.tags, decl.pat.hir_id);
+                }
                 self.record_compartment(decl.pat.hir_id, init_compartments);
             }
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);

@@ -43,4 +43,11 @@ impl CompartmentSet {
         }
         target.tags.iter().all(|t| self.tags.contains(t))
     }
+
+    pub fn matches(&self, other: &Self) -> bool {
+        if self.is_sudo() || other.is_sudo() {
+            return true;
+        }
+        self.tags == other.tags
+    }
 }
