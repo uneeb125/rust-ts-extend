@@ -1024,9 +1024,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             
             // Propagate compartment from initializer to pattern
-            let compartment = self.typeck_results.borrow().node_compartment(init.hir_id).cloned();
-            if let Some(compartment) = compartment {
-                self.record_compartment(decl.pat.hir_id, compartment);
+            if !init_compartments.tags.is_empty() {
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Recording compartments {:?} on decl.pat.hir_id={:?}", init_compartments.tags, decl.pat.hir_id);
+                }
+                self.record_compartment(decl.pat.hir_id, init_compartments);
             }
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);
         }
