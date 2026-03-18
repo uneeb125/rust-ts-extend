@@ -184,6 +184,131 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 CompartmentSet::default()
             }
+            hir::ExprKind::Binary(_, left, right) => {
+                // Binary operation - check both operands
+                let comp = self.find_compartments_in_expr(left);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                self.find_compartments_in_expr(right)
+            }
+            hir::ExprKind::Array(exprs) => {
+                // Array literal - check all elements
+                for e in *exprs {
+                    let comp = self.find_compartments_in_expr(e);
+                    if !comp.tags.is_empty() {
+                        return comp;
+                    }
+                }
+                CompartmentSet::default()
+            }
+            hir::ExprKind::Tup(exprs) => {
+                // Tuple literal - check all elements
+                for e in *exprs {
+                    let comp = self.find_compartments_in_expr(e);
+                    if !comp.tags.is_empty() {
+                        return comp;
+                    }
+                }
+                CompartmentSet::default()
+            }
+            hir::ExprKind::If(cond, then, else_opt) => {
+                // If expression - check condition and branches
+                let comp = self.find_compartments_in_expr(cond);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                let comp = self.find_compartments_in_expr(then);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                if let Some(else_expr) = else_opt {
+                    self.find_compartments_in_expr(else_expr)
+                } else {
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::Match(scrutinee, arms, _) => {
+                // Match expression - check scrutinee and all arms
+                let comp = self.find_compartments_in_expr(scrutinee);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                for arm in *arms {
+                    let comp = self.find_compartments_in_expr(&arm.body);
+                    if !comp.tags.is_empty() {
+                        return comp;
+                    }
+                }
+                CompartmentSet::default()
+            }
+            hir::ExprKind::Loop(block, _, _, _) => {
+                // Loop expression - check block
+                if let Some(expr) = block.expr {
+                    self.find_compartments_in_expr(expr)
+                } else {
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::AddrOf(_, _, inner) => {
+                // Address-of expression (&x) - check inner expression
+                self.find_compartments_in_expr(inner)
+            }
+            hir::ExprKind::Assign(_lhs, rhs, _) => {
+                // Assignment - check RHS (the value being assigned)
+                self.find_compartments_in_expr(rhs)
+            }
+            hir::ExprKind::AssignOp(_, lhs, rhs) => {
+                // Assignment operator (+=, -=, etc.) - check both operands
+                let comp = self.find_compartments_in_expr(lhs);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                self.find_compartments_in_expr(rhs)
+            }
+            hir::ExprKind::Index(base, index, _) => {
+                // Index expression - check both base and index
+                let comp = self.find_compartments_in_expr(base);
+                if !comp.tags.is_empty() {
+                    return comp;
+                }
+                self.find_compartments_in_expr(index)
+            }
+            hir::ExprKind::Field(base, _) => {
+                // Field access - check base expression
+                self.find_compartments_in_expr(base)
+            }
+            hir::ExprKind::Ret(ret_val) => {
+                // Return expression - check return value
+                if let Some(expr) = *ret_val {
+                    self.find_compartments_in_expr(expr)
+                } else {
+                    CompartmentSet::default()
+                }
+            }
+            hir::ExprKind::Repeat(elem, _) => {
+                // Array repeat expression [x; n] - check element
+                self.find_compartments_in_expr(elem)
+            }
+            hir::ExprKind::Struct(_, fields, tail) => {
+                // Struct literal - check tail and field values
+                match tail {
+                    hir::StructTailExpr::Base(base_expr) => {
+                        let comp = self.find_compartments_in_expr(base_expr);
+                        if !comp.tags.is_empty() {
+                            return comp;
+                        }
+                    }
+                    hir::StructTailExpr::None | hir::StructTailExpr::DefaultFields(_) => {}
+                }
+                for field in *fields {
+                    let comp = self.find_compartments_in_expr(&field.expr);
+                    if !comp.tags.is_empty() {
+                        return comp;
+                    }
+                }
+                CompartmentSet::default()
+            }
             _ => CompartmentSet::default(),
         }
     }
