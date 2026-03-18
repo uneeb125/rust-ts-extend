@@ -598,7 +598,26 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 for arg in arg_exprs {
                     let arg_ty = self.typeck_results.borrow().expr_ty(arg);
                     
-                    // Get compartments from the argument's type (for ADT types)
+                    // First, check the expression's compartment (for the actual value being passed)
+                    let arg_compartments = self.find_compartments_in_expr(arg);
+                    
+                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                        eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
+                    }
+                    
+                    // Check if argument's compartment is allowed by function's compartments
+                    if !arg_compartments.tags.is_empty() && !fn_compartments.can_access(&arg_compartments) {
+                        self.tcx.dcx().span_err(
+                            arg.span,
+                            format!(
+                                "argument has compartments ({}) that are not allowed by function's compartments ({})",
+                                arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            ),
+                        );
+                    }
+                    
+                    // Also check the type's declared compartment (for ADT types)
                     if let ty::Adt(adt_def, _) = arg_ty.kind() {
                         let type_def_id = adt_def.did();
                         let type_compartments = self.tcx.compartment_set(type_def_id);

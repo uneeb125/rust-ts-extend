@@ -541,6 +541,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let ty = self.check_expr_lit(lit, expected);
                 // Assign current function's compartments to literals
                 let current_compartments = self.root_ctxt.get_current_compartments();
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Literal compartments: {:?}", current_compartments.tags);
+                }
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     expr.hir_id,
                     current_compartments,
