@@ -617,26 +617,28 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         );
                     }
                     
-                    // Also check the type's declared compartment (for ADT types)
-                    if let ty::Adt(adt_def, _) = arg_ty.kind() {
-                        let type_def_id = adt_def.did();
-                        let type_compartments = self.tcx.compartment_set(type_def_id);
-                        
-                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                            eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
-                                self.tcx.def_path_str(type_def_id), type_compartments.tags);
-                        }
+                    // Also check the type's declared compartment (for ADT types) - only if expression check found nothing
+                    if arg_compartments.tags.is_empty() {
+                        if let ty::Adt(adt_def, _) = arg_ty.kind() {
+                            let type_def_id = adt_def.did();
+                            let type_compartments = self.tcx.compartment_set(type_def_id);
+                            
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
+                                    self.tcx.def_path_str(type_def_id), type_compartments.tags);
+                            }
 
-                        // Check if the argument's type compartments are allowed by function's compartments
-                        if !type_compartments.tags.is_empty() && !fn_compartments.can_access(&type_compartments) {
-                            self.tcx.dcx().span_err(
-                                arg.span,
-                                format!(
-                                    "argument type has compartments ({}) that are not allowed by function's compartments ({})",
-                                    type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                ),
-                            );
+                            // Check if the argument's type compartments are allowed by function's compartments
+                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access(&type_compartments) {
+                                self.tcx.dcx().span_err(
+                                    arg.span,
+                                    format!(
+                                        "argument type has compartments ({}) that are not allowed by function's compartments ({})",
+                                        type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                        fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                    ),
+                                );
+                            }
                         }
                     }
                 }
