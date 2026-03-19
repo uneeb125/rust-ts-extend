@@ -2114,6 +2114,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Check compartment access for struct definition
         let struct_def_id = adt.did();
         let struct_compartments = self.tcx.compartment_set(struct_def_id);
+        let current_compartments = self.root_ctxt.get_current_compartments();
         
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
             eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}", 
@@ -2121,8 +2122,6 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         if !struct_compartments.tags.is_empty() {
-            let current_compartments = self.root_ctxt.get_current_compartments();
-            
             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                 eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
             }
@@ -2143,10 +2142,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         }
 
-        // Record the struct's compartments for this expression
+        // Record compartments for this expression
+        // For external types with empty compartments, use current function's compartments
+        let compartments_to_record = if struct_compartments.tags.is_empty() {
+            current_compartments.clone()
+        } else {
+            struct_compartments.clone()
+        };
         self.typeck_results.borrow_mut()
             .node_compartments_mut()
-            .insert(expr.hir_id, struct_compartments.clone());
+            .insert(expr.hir_id, compartments_to_record);
  
         // Check compartment access for each field being initialized
         for field in fields {

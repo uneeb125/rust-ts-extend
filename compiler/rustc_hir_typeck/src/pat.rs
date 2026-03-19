@@ -403,6 +403,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let ty = self.check_pat_inner(pat, opt_path_res, adjust_mode, expected, pat_info);
         self.write_ty(pat.hir_id, ty);
 
+        // Record compartments for pattern bindings (e.g., for loop variables)
+        // This ensures that pattern-bound variables inherit the current function's compartments
+        let current_compartments = self.root_ctxt.get_current_compartments();
+        if !current_compartments.tags.is_empty() {
+            self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                pat.hir_id,
+                current_compartments.clone(),
+            );
+        }
+
         // If we implicitly inserted overloaded dereferences before matching, check the pattern to
         // see if the dereferenced types need `DerefMut` bounds.
         if let Some(derefed_tys) = self.typeck_results.borrow().pat_adjustments().get(pat.hir_id)
