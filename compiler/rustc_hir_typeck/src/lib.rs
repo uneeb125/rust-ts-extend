@@ -71,6 +71,32 @@ use crate::expectation::Expectation;
 use crate::fn_ctxt::LoweredTy;
 use crate::gather_locals::GatherLocalsVisitor;
 
+fn get_struct_compartments_from_impl(tcx: TyCtxt<'_>, local_impl_id: LocalDefId) -> CompartmentSet {
+    let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+    if let hir::Node::Item(hir::Item { 
+        kind: hir::ItemKind::Impl(impl_block), 
+        .. 
+    }) = tcx.hir_node(impl_hir_id) {
+        if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
+            if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
+                if let Some(local_struct_id) = struct_def_id.as_local() {
+                    let struct_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_struct_id));
+                    if let Some(attr) = struct_attrs.iter().find_map(|attr| {
+                        if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                            Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                        } else {
+                            None
+                        }
+                    }) {
+                        return attr;
+                    }
+                }
+            }
+        }
+    }
+    CompartmentSet::default()
+}
+
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
 #[macro_export]
@@ -146,17 +172,72 @@ fn typeck_with_inspect<'tcx>(
                 .unwrap_or_else(CompartmentSet::default)
         }
         hir::Node::ImplItem(item) => {
-            let attrs = tcx.hir_attrs(item.hir_id());
-            attrs
-                .iter()
-                .find_map(|attr| {
-                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+            // Priority: method's own -> impl block -> associated struct
+            let method_attrs = tcx.hir_attrs(item.hir_id());
+            if let Some(attr) = method_attrs.iter().find_map(|attr| {
+                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                } else {
+                    None
+                }
+            }) {
+                if !attr.tags.is_empty() {
+                    attr
+                } else {
+                    // Check impl block
+                    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
+                        if let Some(local_impl_id) = impl_def_id.as_local() {
+                            let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
+                            if let Some(attr) = impl_attrs.iter().find_map(|attr| {
+                                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                                } else {
+                                    None
+                                }
+                            }) {
+                                if !attr.tags.is_empty() {
+                                    attr
+                                } else {
+                                    // Check associated struct
+                                    get_struct_compartments_from_impl(tcx, local_impl_id)
+                                }
+                            } else {
+                                get_struct_compartments_from_impl(tcx, local_impl_id)
+                            }
+                        } else {
+                            CompartmentSet::default()
+                        }
                     } else {
-                        None
+                        CompartmentSet::default()
                     }
-                })
-                .unwrap_or_else(CompartmentSet::default)
+                }
+            } else {
+                // Check impl block
+                if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
+                    if let Some(local_impl_id) = impl_def_id.as_local() {
+                        let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
+                        if let Some(attr) = impl_attrs.iter().find_map(|attr| {
+                            if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                                Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                            } else {
+                                None
+                            }
+                        }) {
+                            if !attr.tags.is_empty() {
+                                attr
+                            } else {
+                                get_struct_compartments_from_impl(tcx, local_impl_id)
+                            }
+                        } else {
+                            get_struct_compartments_from_impl(tcx, local_impl_id)
+                        }
+                    } else {
+                        CompartmentSet::default()
+                    }
+                } else {
+                    CompartmentSet::default()
+                }
+            }
         }
         _ => CompartmentSet::default(),
     };
