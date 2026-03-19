@@ -224,16 +224,19 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
     }
 
     /// Get compartments from an impl block or trait impl for a method
-    /// Priority: method's own -> impl block -> associated struct -> default
+    /// Priority: method's own (non-Default) -> impl block -> associated struct -> default
     pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
         let debug = std::env::var("COMPARTMENT_DEBUG").is_ok();
         
-        // 1. First check the method's own compartments
+        // 1. First check the method's own compartments (if not just Default)
         let method_compartments = Self::get_function_compartments(tcx, def_id);
         if debug {
             eprintln!("DEBUG: get_impl_method_compartments: method {:?} has compartments: {:?}", def_id, method_compartments.tags);
         }
-        if !method_compartments.tags.is_empty() {
+        // Check if method has explicit compartments (not just Default)
+        let has_explicit = !method_compartments.tags.is_empty() && 
+            !(method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default");
+        if has_explicit {
             return method_compartments;
         }
         
@@ -245,7 +248,9 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                 if debug {
                     eprintln!("DEBUG: get_impl_method_compartments: impl block {:?} has compartments: {:?}", impl_def_id, impl_compartments.tags);
                 }
-                if !impl_compartments.tags.is_empty() {
+                let has_explicit = !impl_compartments.tags.is_empty() && 
+                    !(impl_compartments.tags.len() == 1 && impl_compartments.tags[0].as_str() == "Default");
+                if has_explicit {
                     return impl_compartments;
                 }
                 
@@ -273,7 +278,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             }
         }
         
-        // 4. Fall back to function's own compartments (usually empty/default)
+        // 4. Fall back to function's own compartments (usually Default)
         if debug {
             eprintln!("DEBUG: get_impl_method_compartments: using function's own compartments (default)");
         }

@@ -172,7 +172,11 @@ fn typeck_with_inspect<'tcx>(
                 .unwrap_or_else(CompartmentSet::default)
         }
         hir::Node::ImplItem(item) => {
-            // Priority: method's own -> impl block -> associated struct
+            // Priority: method's own (non-Default) -> impl block -> associated struct
+            fn is_explicit(cs: &CompartmentSet) -> bool {
+                !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
+            }
+            
             let method_attrs = tcx.hir_attrs(item.hir_id());
             if let Some(attr) = method_attrs.iter().find_map(|attr| {
                 if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
@@ -181,7 +185,7 @@ fn typeck_with_inspect<'tcx>(
                     None
                 }
             }) {
-                if !attr.tags.is_empty() {
+                if is_explicit(&attr) {
                     attr
                 } else {
                     // Check impl block
@@ -195,10 +199,9 @@ fn typeck_with_inspect<'tcx>(
                                     None
                                 }
                             }) {
-                                if !attr.tags.is_empty() {
+                                if is_explicit(&attr) {
                                     attr
                                 } else {
-                                    // Check associated struct
                                     get_struct_compartments_from_impl(tcx, local_impl_id)
                                 }
                             } else {
@@ -223,7 +226,7 @@ fn typeck_with_inspect<'tcx>(
                                 None
                             }
                         }) {
-                            if !attr.tags.is_empty() {
+                            if is_explicit(&attr) {
                                 attr
                             } else {
                                 get_struct_compartments_from_impl(tcx, local_impl_id)

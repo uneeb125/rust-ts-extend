@@ -585,10 +585,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         if let Some(def_id) = def_id {
             if let Some(local_def_id) = def_id.as_local() {
-                let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
-                    self.tcx,
-                    local_def_id,
-                );
+                let fn_compartments: rustc_middle::compartments::CompartmentSet = if self.tcx.impl_of_assoc(def_id).is_some() {
+                    // For impl methods, use the hierarchy (method -> impl -> struct)
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
+                        self.tcx,
+                        local_def_id,
+                    )
+                } else {
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                        self.tcx,
+                        local_def_id,
+                    )
+                };
 
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                     eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
