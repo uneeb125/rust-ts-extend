@@ -673,10 +673,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // The return value inherits the function's compartments
         if let Some(def_id) = def_id {
             if let Some(local_def_id) = def_id.as_local() {
-                let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
-                    self.tcx,
-                    local_def_id,
-                );
+                let fn_compartments: rustc_middle::compartments::CompartmentSet = if self.tcx.impl_of_assoc(def_id).is_some() {
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
+                        self.tcx,
+                        local_def_id,
+                    )
+                } else {
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
+                        self.tcx,
+                        local_def_id,
+                    )
+                };
                 
                 if !fn_compartments.tags.is_empty() {
                     self.typeck_results.borrow_mut().node_compartments_mut().insert(

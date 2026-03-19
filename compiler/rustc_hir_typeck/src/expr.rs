@@ -2116,22 +2116,31 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let struct_compartments = self.tcx.compartment_set(struct_def_id);
         let current_compartments = self.root_ctxt.get_current_compartments();
         
+        // If struct only has Default compartment, use current function's compartments
+        let effective_struct_compartments = if struct_compartments.tags.len() == 1 && 
+            struct_compartments.tags[0].as_str() == "Default" {
+            &current_compartments
+        } else {
+            &struct_compartments
+        };
+        
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
             eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}", 
                 self.tcx.def_path_str(struct_def_id), struct_compartments.tags);
+            eprintln!("DEBUG: check_expr_struct: effective compartments: {:?}", effective_struct_compartments.tags);
         }
 
-        if !struct_compartments.tags.is_empty() {
+        if !effective_struct_compartments.tags.is_empty() && !effective_struct_compartments.tags.iter().all(|t| t.as_str() == "Default") {
             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                 eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
             }
 
-            if !current_compartments.can_access(&struct_compartments) {
+            if !current_compartments.can_access(effective_struct_compartments) {
                 self.tcx.dcx().span_err(
                     expr.span,
                     format!(
                         "cannot create instance of struct with compartments ({}) - not available in current scope (available: {})",
-                        struct_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        effective_struct_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                         if current_compartments.tags.is_empty() { 
                             "none".to_string() 
                         } else { 
@@ -2143,8 +2152,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         // Record compartments for this expression
-        // For external types with empty compartments, use current function's compartments
-        let compartments_to_record = if struct_compartments.tags.is_empty() {
+        // For types with Default-only compartments, use current function's compartments
+        let compartments_to_record = if struct_compartments.tags.len() == 1 && 
+            struct_compartments.tags[0].as_str() == "Default" {
             current_compartments.clone()
         } else {
             struct_compartments.clone()
