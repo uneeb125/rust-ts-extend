@@ -25,6 +25,7 @@ impl<S: Stage> CombineAttributeParser<S> for CompartmentsParser {
         Allow(Target::AssocConst),
         Allow(Target::AssocTy),
         Allow(Target::Field),
+        Allow(Target::Method(MethodKind::Inherent)),
     ]);
     const TEMPLATE: AttributeTemplate = template!(List: &["c1", "c2"]);
 
