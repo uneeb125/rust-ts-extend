@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use rustc_data_structures::unord::{UnordMap, UnordSet};
 use rustc_hir::def_id::LocalDefId;
-use rustc_hir::{self as hir, HirId, HirIdMap, LangItem};
+use rustc_hir::{self as hir, def::DefKind, def::Res, HirId, HirIdMap, LangItem};
 use rustc_hir::attrs::AttributeKind;
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
@@ -224,23 +224,58 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
     }
 
     /// Get compartments from an impl block or trait impl for a method
+    /// Priority: method's own -> impl block -> associated struct -> default
     pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
-        let def_id = def_id.to_def_id();
+        let debug = std::env::var("COMPARTMENT_DEBUG").is_ok();
         
-        // For methods, look at the impl block they're associated with
+        // 1. First check the method's own compartments
+        let method_compartments = Self::get_function_compartments(tcx, def_id);
+        if debug {
+            eprintln!("DEBUG: get_impl_method_compartments: method {:?} has compartments: {:?}", def_id, method_compartments.tags);
+        }
+        if !method_compartments.tags.is_empty() {
+            return method_compartments;
+        }
+        
+        // 2. Check the impl block's compartments
+        let def_id = def_id.to_def_id();
         if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
             if let Some(local_impl_id) = impl_def_id.as_local() {
                 let impl_compartments = Self::get_function_compartments(tcx, local_impl_id);
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: get_impl_method_compartments: found impl block {:?} with compartments: {:?}", impl_def_id, impl_compartments.tags);
+                if debug {
+                    eprintln!("DEBUG: get_impl_method_compartments: impl block {:?} has compartments: {:?}", impl_def_id, impl_compartments.tags);
                 }
-                return impl_compartments;
+                if !impl_compartments.tags.is_empty() {
+                    return impl_compartments;
+                }
+                
+                // 3. Check the associated struct's compartments
+                let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+                if let hir::Node::Item(hir::Item { 
+                    kind: hir::ItemKind::Impl(impl_block), 
+                    .. 
+                }) = tcx.hir_node(impl_hir_id) {
+                    // Get the self_ty from the impl block
+                    let self_ty = impl_block.self_ty;
+                    // Extract DefId from the path
+                    if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = self_ty.kind {
+                        if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
+                            if let Some(local_struct_id) = struct_def_id.as_local() {
+                                let struct_compartments = Self::get_function_compartments(tcx, local_struct_id);
+                                if debug {
+                                    eprintln!("DEBUG: get_impl_method_compartments: struct {:?} has compartments: {:?}", struct_def_id, struct_compartments.tags);
+                                }
+                                return struct_compartments;
+                            }
+                        }
+                    }
+                }
             }
         }
         
-        // Fall back to function's own compartments
-        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-            eprintln!("DEBUG: get_impl_method_compartments: using function's own compartments");
+        // 4. Fall back to function's own compartments (usually empty/default)
+        if debug {
+            eprintln!("DEBUG: get_impl_method_compartments: using function's own compartments (default)");
         }
         Self::get_function_compartments(tcx, def_id.as_local().unwrap())
     }

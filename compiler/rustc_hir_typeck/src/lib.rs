@@ -131,20 +131,34 @@ fn typeck_with_inspect<'tcx>(
 
     let param_env = tcx.param_env(def_id);
 
-    let compartments = if let hir::Node::Item(item) = node {
-        let attrs = tcx.hir_attrs(item.hir_id());
-        attrs
-            .iter()
-            .find_map(|attr| {
-                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(CompartmentSet::default)
-    } else {
-        CompartmentSet::default()
+    let compartments = match node {
+        hir::Node::Item(item) => {
+            let attrs = tcx.hir_attrs(item.hir_id());
+            attrs
+                .iter()
+                .find_map(|attr| {
+                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(CompartmentSet::default)
+        }
+        hir::Node::ImplItem(item) => {
+            let attrs = tcx.hir_attrs(item.hir_id());
+            attrs
+                .iter()
+                .find_map(|attr| {
+                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(CompartmentSet::default)
+        }
+        _ => CompartmentSet::default(),
     };
 
     let root_ctxt = TypeckRootCtxt::new_with_compartments(tcx, def_id, compartments);
