@@ -824,6 +824,24 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         if let ty::FnDef(did, _) = *ty.kind() {
             let fn_sig = ty.fn_sig(tcx);
 
+            // Record compartments for function references (not just calls)
+            let fn_compartments = if let Some(local_def_id) = did.as_local() {
+                if tcx.impl_of_assoc(did).is_some() {
+                    // For impl methods, use the hierarchy
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(tcx, local_def_id)
+                } else {
+                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(tcx, local_def_id)
+                }
+            } else {
+                rustc_middle::compartments::CompartmentSet::default()
+            };
+            if !fn_compartments.tags.is_empty() {
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: check_expr_path: recording compartments {:?} for fn {:?}", fn_compartments.tags, did);
+                }
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(expr.hir_id, fn_compartments);
+            }
+
             if tcx.is_intrinsic(did, sym::transmute) {
                 let Some(from) = fn_sig.inputs().skip_binder().get(0) else {
                     span_bug!(
