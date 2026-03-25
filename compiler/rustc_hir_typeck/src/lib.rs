@@ -73,9 +73,9 @@ use crate::gather_locals::GatherLocalsVisitor;
 
 fn get_struct_compartments_from_impl(tcx: TyCtxt<'_>, local_impl_id: LocalDefId) -> CompartmentSet {
     let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
-    if let hir::Node::Item(hir::Item { 
-        kind: hir::ItemKind::Impl(impl_block), 
-        .. 
+    if let hir::Node::Item(hir::Item {
+        kind: hir::ItemKind::Impl(impl_block),
+        ..
     }) = tcx.hir_node(impl_hir_id) {
         if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
             if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
@@ -149,6 +149,10 @@ fn typeck_with_inspect<'tcx>(
     let node = tcx.hir_node(id);
     let span = tcx.def_span(def_id);
 
+    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+        eprintln!("[DEBUG typeck] def_id={:?}, def_kind={:?}", def_id, tcx.def_kind(def_id.to_def_id()));
+    }
+
     // Figure out what primary body this item has.
     let body_id = node.body_id().unwrap_or_else(|| {
         span_bug!(span, "can't type-check body of {:?}", def_id);
@@ -157,36 +161,76 @@ fn typeck_with_inspect<'tcx>(
 
     let param_env = tcx.param_env(def_id);
 
-    let compartments = match node {
-        hir::Node::Item(item) => {
-            let attrs = tcx.hir_attrs(item.hir_id());
-            attrs
-                .iter()
-                .find_map(|attr| {
+    // For const items inside functions, get compartments from the enclosing function
+    let def_kind = tcx.def_kind(def_id.to_def_id());
+    let compartments = if def_kind == DefKind::Const {
+        let parent_owner_id = tcx.hir_get_parent_item(id);
+        let parent_def_id = parent_owner_id.to_def_id();
+        if parent_def_id != def_id.to_def_id() {
+            // Has a parent item - get its compartments
+            TypeckRootCtxt::get_function_compartments(tcx, parent_def_id.expect_local())
+        } else {
+            // Top-level const - use default
+            CompartmentSet::default()
+        }
+    } else {
+        match node {
+            hir::Node::Item(item) => {
+                let attrs = tcx.hir_attrs(item.hir_id());
+                attrs
+                    .iter()
+                    .find_map(|attr| {
+                        if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                            Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(CompartmentSet::default)
+            }
+            hir::Node::ImplItem(item) => {
+                // Priority: method's own (non-Default) -> impl block -> associated struct
+                fn is_explicit(cs: &CompartmentSet) -> bool {
+                    !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
+                }
+
+                let method_attrs = tcx.hir_attrs(item.hir_id());
+                if let Some(attr) = method_attrs.iter().find_map(|attr| {
                     if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
                         Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
                     } else {
                         None
                     }
-                })
-                .unwrap_or_else(CompartmentSet::default)
-        }
-        hir::Node::ImplItem(item) => {
-            // Priority: method's own (non-Default) -> impl block -> associated struct
-            fn is_explicit(cs: &CompartmentSet) -> bool {
-                !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
-            }
-            
-            let method_attrs = tcx.hir_attrs(item.hir_id());
-            if let Some(attr) = method_attrs.iter().find_map(|attr| {
-                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                } else {
-                    None
-                }
-            }) {
-                if is_explicit(&attr) {
-                    attr
+                }) {
+                    if is_explicit(&attr) {
+                        attr
+                    } else {
+                        // Check impl block
+                        if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
+                            if let Some(local_impl_id) = impl_def_id.as_local() {
+                                let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
+                                if let Some(attr) = impl_attrs.iter().find_map(|attr| {
+                                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                                    } else {
+                                        None
+                                    }
+                                }) {
+                                    if is_explicit(&attr) {
+                                        attr
+                                    } else {
+                                        get_struct_compartments_from_impl(tcx, local_impl_id)
+                                    }
+                                } else {
+                                    get_struct_compartments_from_impl(tcx, local_impl_id)
+                                }
+                            } else {
+                                CompartmentSet::default()
+                            }
+                        } else {
+                            CompartmentSet::default()
+                        }
+                    }
                 } else {
                     // Check impl block
                     if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
@@ -214,36 +258,14 @@ fn typeck_with_inspect<'tcx>(
                         CompartmentSet::default()
                     }
                 }
-            } else {
-                // Check impl block
-                if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
-                    if let Some(local_impl_id) = impl_def_id.as_local() {
-                        let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
-                        if let Some(attr) = impl_attrs.iter().find_map(|attr| {
-                            if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                                Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                            } else {
-                                None
-                            }
-                        }) {
-                            if is_explicit(&attr) {
-                                attr
-                            } else {
-                                get_struct_compartments_from_impl(tcx, local_impl_id)
-                            }
-                        } else {
-                            get_struct_compartments_from_impl(tcx, local_impl_id)
-                        }
-                    } else {
-                        CompartmentSet::default()
-                    }
-                } else {
-                    CompartmentSet::default()
-                }
             }
+            _ => CompartmentSet::default(),
         }
-        _ => CompartmentSet::default(),
     };
+
+    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+        eprintln!("[DEBUG typeck] def_id={:?}, compartments={:?}", def_id, compartments);
+    }
 
     let root_ctxt = TypeckRootCtxt::new_with_compartments(tcx, def_id, compartments);
     if let Some(inspector) = inspector {
