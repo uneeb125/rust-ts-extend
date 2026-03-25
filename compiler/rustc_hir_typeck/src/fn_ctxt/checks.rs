@@ -179,6 +179,49 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             if let Some(compartment) = self.typeck_results.borrow().node_compartment(hir_id).cloned() {
                                 return compartment;
                             }
+                        } else {
+                            // Different owner - try to get compartments from the def_id's compartment_set
+                            // This handles const items inside functions which inherit parent function's compartments
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: Different owner case - local_id={:?}, hir_id={:?}, parent_item={:?}", 
+                                    local_id, hir_id, self.tcx.hir_get_parent_item(hir_id));
+                            }
+                            let def_compartments = self.tcx.compartment_set(local_id.to_def_id());
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: def_compartments for {:?}: {:?}", local_id, def_compartments.tags);
+                            }
+                            
+                            // Check if def_compartments is non-Default (explicitly set)
+                            fn is_explicit(cs: &rustc_middle::compartments::CompartmentSet) -> bool {
+                                !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
+                            }
+                            
+                            if is_explicit(&def_compartments) {
+                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                    eprintln!("DEBUG: Returning explicit def_compartments");
+                                }
+                                return def_compartments.clone();
+                            }
+                            
+                            // def_compartments is Default - try to get from parent function
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: def_compartments is default, trying parent");
+                            }
+                            let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
+                            let parent_def_id = parent_owner_id.to_def_id();
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: parent_def_id={:?}, local_def_id={:?}, compare={}", 
+                                    parent_def_id, local_id, parent_def_id != local_id.to_def_id());
+                            }
+                            if parent_def_id != local_id.to_def_id() {
+                                let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                    eprintln!("DEBUG: parent_compartments for {:?}: {:?}", parent_def_id, parent_compartments.tags);
+                                }
+                                if is_explicit(&parent_compartments) {
+                                    return parent_compartments.clone();
+                                }
+                            }
                         }
                     }
                 }
