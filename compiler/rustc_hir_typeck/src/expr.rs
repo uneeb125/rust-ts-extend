@@ -833,7 +833,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(tcx, local_def_id)
                 }
             } else {
-                rustc_middle::compartments::CompartmentSet::default()
+                // Non-local function - use crate name as default when feature is active
+                let compartments = tcx.compartment_set(did);
+                if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
+                    if tcx.features().compartments() {
+                        let crate_name = tcx.crate_name(did.krate);
+                        let crate_compartment = Symbol::intern(&crate_name.as_str());
+                        CompartmentSet { tags: vec![crate_compartment] }
+                    } else {
+                        compartments.clone()
+                    }
+                } else {
+                    compartments.clone()
+                }
             };
             if !fn_compartments.tags.is_empty() {
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {

@@ -15,7 +15,7 @@ use rustc_middle::ty::adjustment::{
 use rustc_middle::ty::{self, GenericArgsRef, Ty, TyCtxt, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
 use rustc_span::def_id::LocalDefId;
-use rustc_span::{Span, sym};
+use rustc_span::{Span, Symbol, sym};
 use rustc_target::spec::{AbiMap, AbiMapping};
 use rustc_trait_selection::error_reporting::traits::DefIdOrName;
 use rustc_trait_selection::infer::InferCtxtExt as _;
@@ -672,8 +672,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Record function's compartments on the call expression
         // The return value inherits the function's compartments
         if let Some(def_id) = def_id {
-            if let Some(local_def_id) = def_id.as_local() {
-                let fn_compartments: rustc_middle::compartments::CompartmentSet = if self.tcx.impl_of_assoc(def_id).is_some() {
+            let fn_compartments: rustc_middle::compartments::CompartmentSet = if let Some(local_def_id) = def_id.as_local() {
+                if self.tcx.impl_of_assoc(def_id).is_some() {
                     super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
                         self.tcx,
                         local_def_id,
@@ -683,14 +683,28 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         self.tcx,
                         local_def_id,
                     )
-                };
-                
-                if !fn_compartments.tags.is_empty() {
-                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
-                        call_expr.hir_id,
-                        fn_compartments,
-                    );
                 }
+            } else {
+                // Non-local function - use crate name as default when feature is active
+                let compartments = self.tcx.compartment_set(def_id);
+                if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
+                    if self.tcx.features().compartments() {
+                        let crate_name = self.tcx.crate_name(def_id.krate);
+                        let crate_compartment = Symbol::intern(&crate_name.as_str());
+                        rustc_middle::compartments::CompartmentSet { tags: vec![crate_compartment] }
+                    } else {
+                        compartments.clone()
+                    }
+                } else {
+                    compartments.clone()
+                }
+            };
+            
+            if !fn_compartments.tags.is_empty() {
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                    call_expr.hir_id,
+                    fn_compartments,
+                );
             }
         } else {
             // Closure call - get compartments from the callee expression itself
