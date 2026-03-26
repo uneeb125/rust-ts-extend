@@ -781,14 +781,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let tcx = self.tcx;
         let (res, opt_ty, segs) =
             self.resolve_ty_and_res_fully_qualified_call(qpath, expr.hir_id, expr.span);
- 
+
         // Enforce compartment access for path expressions
         // Disabled - using new argument/return value checking instead
         // if let Some(def_id) = res.opt_def_id() {
         //     let set = self.check_compartment_access(def_id, expr.span, "item");
         //     self.record_compartment(expr.hir_id, set);
         // }
- 
+
         let ty = match res {
             Res::Err => {
                 self.suggest_assoc_method_call(segs);
@@ -1495,7 +1495,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // This is (basically) inlined `check_expr_coercible_to_type`, but we want
         // to suggest an additional fixup here in `suggest_deref_binop`.
         let rhs_ty = self.check_expr_with_hint(rhs, lhs_ty);
-        
+
         let rhs_compartments = if let hir::ExprKind::Cast(_, ty) = &rhs.kind {
             // Cast expression - get compartments from Ty
             CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
@@ -1505,10 +1505,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         };
 
         let current_compartments = self.root_ctxt.current_compartments.clone();
-        
+
         // Check if assignment is inside unsafe block
         let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
-        
+
         if !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access(&rhs_compartments) {
             self.tcx.dcx().span_err(
                 rhs.span,
@@ -1519,7 +1519,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 ),
             );
         }
-        
+
         // Record compartments on the LHS variable (for subsequent reads)
         // Use the rhs expression's compartments
         if !rhs_compartments.tags.is_empty() {
@@ -1534,7 +1534,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
                     _ => None,
                 };
-                
+
                 if let Some(target_hir_id) = target_hir_id {
                     self.typeck_results.borrow_mut().node_compartments_mut().insert(
                         target_hir_id,
@@ -1543,7 +1543,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
             }
         }
-        
+
         if let Err(mut diag) =
             self.demand_coerce_diag(rhs, rhs_ty, lhs_ty, Some(lhs), AllowTwoPhase::No)
         {
@@ -1760,14 +1760,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Check if argument types' compartments are allowed by method's declared compartments
                     for arg in args {
                         let arg_ty = self.typeck_results.borrow().expr_ty(arg);
-                        
+
                         // Get compartments from the argument's type
                         if let ty::Adt(adt_def, _) = arg_ty.kind() {
                             let type_def_id = adt_def.did();
                             let type_compartments = self.tcx.compartment_set(type_def_id);
-                            
+
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
+                                eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
                                     self.tcx.def_path_str(type_def_id), type_compartments.tags);
                             }
 
@@ -2133,36 +2133,45 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let struct_def_id = adt.did();
         let struct_compartments = self.tcx.compartment_set(struct_def_id);
         let current_compartments = self.root_ctxt.get_current_compartments();
-        
+
         // If struct only has Default compartment, use current function's compartments
-        let effective_struct_compartments = if struct_compartments.tags.len() == 1 && 
+        // Only apply crate-name default if compartments feature is active
+        let use_compartments = self.tcx.features().compartments();
+        let effective_struct_compartments = if struct_compartments.tags.len() == 1 &&
             struct_compartments.tags[0].as_str() == "Default" {
-            &current_compartments
+            if use_compartments {
+                // Use crate name as default when feature is active
+                let crate_name = self.tcx.crate_name(struct_def_id.krate);
+                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                CompartmentSet { tags: vec![crate_compartment]}
+            } else {
+                current_compartments.clone()
+            }
         } else {
-            &struct_compartments
+            struct_compartments.clone()
         };
-        
+
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-            eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}", 
+            eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}",
                 self.tcx.def_path_str(struct_def_id), struct_compartments.tags);
             eprintln!("DEBUG: check_expr_struct: effective compartments: {:?}", effective_struct_compartments.tags);
         }
 
-        if !effective_struct_compartments.tags.is_empty() && !effective_struct_compartments.tags.iter().all(|t| t.as_str() == "Default") {
+        if !effective_struct_compartments.tags.is_empty() && !effective_struct_compartments.tags.iter().all(|t: &Symbol| t.as_str() == "Default") {
             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                 eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
             }
 
-            if !current_compartments.can_access(effective_struct_compartments) {
+            if !current_compartments.can_access(&effective_struct_compartments) {
                 self.tcx.dcx().span_err(
                     expr.span,
                     format!(
                         "cannot create instance of struct with compartments ({}) - not available in current scope (available: {})",
-                        effective_struct_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                        if current_compartments.tags.is_empty() { 
-                            "none".to_string() 
-                        } else { 
-                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ") 
+                        effective_struct_compartments.tags.iter().map(|s: &Symbol| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        if current_compartments.tags.is_empty() {
+                            "none".to_string()
+                        } else {
+                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                         }
                     ),
                 );
@@ -2170,17 +2179,24 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         // Record compartments for this expression
-        // For types with Default-only compartments, use current function's compartments
-        let compartments_to_record = if struct_compartments.tags.len() == 1 && 
+        // For types with Default-only compartments, use crate name as default when feature is active
+        let compartments_to_record = if struct_compartments.tags.len() == 1 &&
             struct_compartments.tags[0].as_str() == "Default" {
-            current_compartments.clone()
+            if use_compartments {
+                // Use crate name as default when feature is active
+                let crate_name = self.tcx.crate_name(struct_def_id.krate);
+                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                CompartmentSet { tags: vec![crate_compartment] }
+            } else {
+                current_compartments.clone()
+            }
         } else {
             struct_compartments.clone()
         };
         self.typeck_results.borrow_mut()
             .node_compartments_mut()
             .insert(expr.hir_id, compartments_to_record);
- 
+
         // Check compartment access for each field being initialized
         for field in fields {
             // Find field definition by name
@@ -2193,7 +2209,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // self.check_compartment_access(field_def.did, field.span, "field");
             }
         }
- 
+
         if variant.field_list_has_applicable_non_exhaustive() {
             self.dcx()
                 .emit_err(StructExprNonExhaustive { span: expr.span, what: adt.variant_descr() });
