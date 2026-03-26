@@ -9,7 +9,7 @@ use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInf
 use rustc_middle::span_bug;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
 use rustc_middle::compartments::CompartmentSet;
-use rustc_span::Span;
+use rustc_span::{Span, Symbol};
 use rustc_span::def_id::LocalDefIdMap;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 use rustc_trait_selection::traits::{
@@ -220,7 +220,16 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                     None
                 }
             })
-            .unwrap_or_else(CompartmentSet::default)
+            .unwrap_or_else(|| {
+                // Use crate name as default when feature is active
+                if tcx.features().compartments() {
+                    let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                    let crate_compartment = Symbol::intern(&crate_name.as_str());
+                    CompartmentSet { tags: vec![crate_compartment] }
+                } else {
+                    CompartmentSet::default()
+                }
+            })
     }
 
     /// Get compartments from an impl block or trait impl for a method

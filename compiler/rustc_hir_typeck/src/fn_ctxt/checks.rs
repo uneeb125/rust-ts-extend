@@ -251,6 +251,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 }
                             }
                         }
+                    } else {
+                        // Non-local def_id - use crate name as default when feature is active
+                        let def_compartments = self.tcx.compartment_set(res);
+                        if def_compartments.tags.is_empty() || def_compartments.tags.len() == 1 && def_compartments.tags[0].as_str() == "Default" {
+                            if self.tcx.features().compartments() {
+                                let crate_name = self.tcx.crate_name(res.krate);
+                                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                return CompartmentSet { tags: vec![crate_compartment] };
+                            }
+                        }
+                        return def_compartments.clone();
                     }
                 }
                 CompartmentSet::default()
