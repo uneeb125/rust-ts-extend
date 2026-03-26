@@ -20,7 +20,7 @@ use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::{self, IsSuggestable, Ty, TyCtxt, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
 use rustc_session::Session;
-use rustc_span::{DUMMY_SP, Ident, Span, kw, sym};
+use rustc_span::{DUMMY_SP, Ident, Span, Symbol, kw, sym};
 use rustc_trait_selection::error_reporting::infer::{FailureCode, ObligationCauseExt};
 use rustc_trait_selection::infer::InferCtxtExt;
 use rustc_trait_selection::traits::{self, ObligationCauseCode, ObligationCtxt, SelectionContext};
@@ -123,7 +123,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     CompartmentSet::default()
                 }
             }
-            hir::ExprKind::Call(_callee, args) => {
+            hir::ExprKind::Call(callee, args) => {
                 // For calls, check if the callee has compartments (via node_compartment)
                 // The callee itself won't have compartments, but the call expression should
                 if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
@@ -136,10 +136,25 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             return comp;
                         }
                     }
+                    // Fallback: get compartments from callee definition
+                    // Use crate name as default when feature is active
+                    if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &callee.kind {
+                        if let Some(def_id) = path.res.opt_def_id() {
+                            let callee_compartments = self.tcx.compartment_set(def_id);
+                            if callee_compartments.tags.is_empty() || callee_compartments.tags.len() == 1 && callee_compartments.tags[0].as_str() == "Default" {
+                                if self.tcx.features().compartments() {
+                                    let crate_name = self.tcx.crate_name(def_id.krate);
+                                    let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                    return CompartmentSet { tags: vec![crate_compartment] };
+                                }
+                            }
+                            return callee_compartments.clone();
+                        }
+                    }
                     CompartmentSet::default()
                 }
             }
-            hir::ExprKind::MethodCall(_, receiver, args, _) => {
+            hir::ExprKind::MethodCall(segment, receiver, args, _) => {
                 // Method call
                 if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
                     compartment
@@ -154,6 +169,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         if !comp.tags.is_empty() {
                             return comp;
                         }
+                    }
+                    // Fallback: get compartments from the method's impl block or the method itself
+                    // Use crate name as default when feature is active
+                    if let Some(def_id) = segment.res.opt_def_id() {
+                        let method_compartments = self.tcx.compartment_set(def_id);
+                        if method_compartments.tags.is_empty() || method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default" {
+                            if self.tcx.features().compartments() {
+                                let crate_name = self.tcx.crate_name(def_id.krate);
+                                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                return CompartmentSet { tags: vec![crate_compartment] };
+                            }
+                        }
+                        return method_compartments.clone();
                     }
                     CompartmentSet::default()
                 }
