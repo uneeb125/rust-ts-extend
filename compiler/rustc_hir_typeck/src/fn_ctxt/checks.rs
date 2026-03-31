@@ -137,9 +137,25 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
                     }
                     // Fallback: get compartments from callee definition
-                    // Use crate name as default when feature is active
+                    // Check if this is a Const item - if so, get parent function's compartments
                     if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &callee.kind {
                         if let Some(def_id) = path.res.opt_def_id() {
+                            // Check if this is a Const item (nested inside a function)
+                            if self.tcx.def_kind(def_id) == DefKind::Const {
+                                let local_def_id = def_id.expect_local();
+                                let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+                                let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
+                                let parent_def_id = parent_owner_id.to_def_id();
+                                if parent_def_id != def_id {
+                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                        eprintln!("DEBUG: Call to const {:?}, using parent {:?} compartments: {:?}", 
+                                            def_id, parent_def_id, parent_compartments.tags);
+                                    }
+                                    return parent_compartments.clone();
+                                }
+                            }
+                            
                             let callee_compartments = self.tcx.compartment_set(def_id);
                             if callee_compartments.tags.is_empty() || callee_compartments.tags.len() == 1 && callee_compartments.tags[0].as_str() == "Default" {
                                 if self.tcx.features().compartments() {
@@ -171,8 +187,25 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
                     }
                     // Fallback: get compartments from the method's impl block or the method itself
-                    // Use crate name as default when feature is active
+                    // Check if this is a Const item - if so, get parent function's compartments
                     if let Some(def_id) = segment.res.opt_def_id() {
+                        // Check if this is a Const item (nested inside a function)
+                        if self.tcx.def_kind(def_id) == DefKind::Const {
+                            if let Some(local_def_id) = def_id.as_local() {
+                                let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+                                let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
+                                let parent_def_id = parent_owner_id.to_def_id();
+                                if parent_def_id != def_id {
+                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                        eprintln!("DEBUG: Method call to const {:?}, using parent {:?} compartments: {:?}", 
+                                            def_id, parent_def_id, parent_compartments.tags);
+                                    }
+                                    return parent_compartments.clone();
+                                }
+                            }
+                        }
+                        
                         let method_compartments = self.tcx.compartment_set(def_id);
                         if method_compartments.tags.is_empty() || method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default" {
                             if self.tcx.features().compartments() {
@@ -208,12 +241,34 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 return compartment;
                             }
                         } else {
-                            // Different owner - try to get compartments from the def_id's compartment_set
-                            // This handles const items inside functions which inherit parent function's compartments
+                            // Different owner - could be a const item inside a function
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: Different owner case - local_id={:?}, hir_id={:?}, parent_item={:?}", 
                                     local_id, hir_id, self.tcx.hir_get_parent_item(hir_id));
                             }
+                            
+                            // Check if this is a Const item - if so, get parent function's compartments
+                            let def_kind = self.tcx.def_kind(local_id);
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: def_kind for {:?}: {:?}", local_id, def_kind);
+                            }
+                            
+                            if matches!(def_kind, DefKind::Const) {
+                                // Get compartments from parent function instead of using crate name default
+                                let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
+                                let parent_def_id = parent_owner_id.to_def_id();
+                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                    eprintln!("DEBUG: Const item {:?} parent is {:?}", local_id, parent_def_id);
+                                }
+                                if parent_def_id != local_id.to_def_id() {
+                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                        eprintln!("DEBUG: parent_compartments for {:?}: {:?}", parent_def_id, parent_compartments.tags);
+                                    }
+                                    return parent_compartments.clone();
+                                }
+                            }
+                            
                             let def_compartments = self.tcx.compartment_set(local_id.to_def_id());
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: def_compartments for {:?}: {:?}", local_id, def_compartments.tags);
