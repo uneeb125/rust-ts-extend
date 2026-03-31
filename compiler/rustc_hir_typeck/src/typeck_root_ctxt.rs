@@ -232,54 +232,72 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             })
     }
 
+    /// Get explicit compartments only - returns empty if no explicit attribute
+    /// Does NOT use crate name as fallback
+    pub(super) fn get_explicit_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
+        let hir_id = tcx.local_def_id_to_hir_id(def_id);
+        let attrs = tcx.hir_attrs(hir_id);
+        attrs
+            .iter()
+            .find_map(|attr| {
+                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
+                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(CompartmentSet::default())
+    }
+
+    /// Check if compartments are explicitly set (not Default, not crate name)
+    fn has_explicit_compartments(cs: &CompartmentSet) -> bool {
+        !cs.tags.is_empty() && 
+        !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
+    }
+
     /// Get compartments from an impl block or trait impl for a method
-    /// Priority: method's own (non-Default) -> impl block -> associated struct -> default
+    /// Priority: method's own explicit -> impl block explicit -> struct explicit -> crate name default
     pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
         let debug = std::env::var("COMPARTMENT_DEBUG").is_ok();
         
-        // 1. First check the method's own compartments (if not just Default)
-        let method_compartments = Self::get_function_compartments(tcx, def_id);
+        // 1. First check the method's own explicit compartments
+        let method_compartments = Self::get_explicit_compartments(tcx, def_id);
         if debug {
-            eprintln!("DEBUG: get_impl_method_compartments: method {:?} has compartments: {:?}", def_id, method_compartments.tags);
+            eprintln!("DEBUG: get_impl_method_compartments: method {:?} has explicit compartments: {:?}", def_id, method_compartments.tags);
         }
-        // Check if method has explicit compartments (not just Default)
-        let has_explicit = !method_compartments.tags.is_empty() && 
-            !(method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default");
-        if has_explicit {
+        if Self::has_explicit_compartments(&method_compartments) {
             return method_compartments;
         }
         
-        // 2. Check the impl block's compartments
+        // 2. Check the impl block's explicit compartments
         let def_id = def_id.to_def_id();
         if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
             if let Some(local_impl_id) = impl_def_id.as_local() {
-                let impl_compartments = Self::get_function_compartments(tcx, local_impl_id);
+                let impl_compartments = Self::get_explicit_compartments(tcx, local_impl_id);
                 if debug {
-                    eprintln!("DEBUG: get_impl_method_compartments: impl block {:?} has compartments: {:?}", impl_def_id, impl_compartments.tags);
+                    eprintln!("DEBUG: get_impl_method_compartments: impl block {:?} has explicit compartments: {:?}", impl_def_id, impl_compartments.tags);
                 }
-                let has_explicit = !impl_compartments.tags.is_empty() && 
-                    !(impl_compartments.tags.len() == 1 && impl_compartments.tags[0].as_str() == "Default");
-                if has_explicit {
+                if Self::has_explicit_compartments(&impl_compartments) {
                     return impl_compartments;
                 }
                 
-                // 3. Check the associated struct's compartments
+                // 3. Check the associated struct's explicit compartments
                 let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
                 if let hir::Node::Item(hir::Item { 
                     kind: hir::ItemKind::Impl(impl_block), 
                     .. 
                 }) = tcx.hir_node(impl_hir_id) {
-                    // Get the self_ty from the impl block
                     let self_ty = impl_block.self_ty;
-                    // Extract DefId from the path
                     if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = self_ty.kind {
                         if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
                             if let Some(local_struct_id) = struct_def_id.as_local() {
-                                let struct_compartments = Self::get_function_compartments(tcx, local_struct_id);
+                                let struct_compartments = Self::get_explicit_compartments(tcx, local_struct_id);
                                 if debug {
-                                    eprintln!("DEBUG: get_impl_method_compartments: struct {:?} has compartments: {:?}", struct_def_id, struct_compartments.tags);
+                                    eprintln!("DEBUG: get_impl_method_compartments: struct {:?} has explicit compartments: {:?}", struct_def_id, struct_compartments.tags);
                                 }
-                                return struct_compartments;
+                                if Self::has_explicit_compartments(&struct_compartments) {
+                                    return struct_compartments;
+                                }
                             }
                         }
                     }
@@ -287,11 +305,17 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             }
         }
         
-        // 4. Fall back to function's own compartments (usually Default)
+        // 4. Fall back to crate name default
         if debug {
-            eprintln!("DEBUG: get_impl_method_compartments: using function's own compartments (default)");
+            eprintln!("DEBUG: get_impl_method_compartments: using crate name default");
         }
-        Self::get_function_compartments(tcx, def_id.as_local().unwrap())
+        if tcx.features().compartments() {
+            let crate_name = tcx.crate_name(def_id.krate);
+            let crate_compartment = Symbol::intern(&crate_name.as_str());
+            CompartmentSet { tags: vec![crate_compartment] }
+        } else {
+            CompartmentSet::default()
+        }
     }
 
     #[allow(dead_code)]
