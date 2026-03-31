@@ -58,7 +58,7 @@ use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_middle::{bug, span_bug};
 use rustc_middle::compartments::CompartmentSet;
 use rustc_session::config;
-use rustc_span::Span;
+use rustc_span::{Span, Symbol};
 use rustc_span::def_id::LocalDefId;
 use tracing::{debug, instrument};
 use typeck_root_ctxt::TypeckRootCtxt;
@@ -94,7 +94,14 @@ fn get_struct_compartments_from_impl(tcx: TyCtxt<'_>, local_impl_id: LocalDefId)
             }
         }
     }
-    CompartmentSet::default()
+    // Use crate name as default when feature is active
+    if tcx.features().compartments() {
+        let crate_name = tcx.crate_name(local_impl_id.to_def_id().krate);
+        let crate_compartment = Symbol::intern(&crate_name.as_str());
+        CompartmentSet { tags: vec![crate_compartment] }
+    } else {
+        CompartmentSet::default()
+    }
 }
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
@@ -170,8 +177,14 @@ fn typeck_with_inspect<'tcx>(
             // Has a parent item - get its compartments
             TypeckRootCtxt::get_function_compartments(tcx, parent_def_id.expect_local())
         } else {
-            // Top-level const - use default
-            CompartmentSet::default()
+            // Top-level const - use crate name as default when feature is active
+            if tcx.features().compartments() {
+                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                CompartmentSet { tags: vec![crate_compartment] }
+            } else {
+                CompartmentSet::default()
+            }
         }
     } else {
         match node {
@@ -186,7 +199,16 @@ fn typeck_with_inspect<'tcx>(
                             None
                         }
                     })
-                    .unwrap_or_else(CompartmentSet::default)
+                    .unwrap_or_else(|| {
+                        // Use crate name as default when feature is active
+                        if tcx.features().compartments() {
+                            let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                            let crate_compartment = Symbol::intern(&crate_name.as_str());
+                            CompartmentSet { tags: vec![crate_compartment] }
+                        } else {
+                            CompartmentSet::default()
+                        }
+                    })
             }
             hir::Node::ImplItem(item) => {
                 // Priority: method's own (non-Default) -> impl block -> associated struct
@@ -225,10 +247,24 @@ fn typeck_with_inspect<'tcx>(
                                     get_struct_compartments_from_impl(tcx, local_impl_id)
                                 }
                             } else {
-                                CompartmentSet::default()
+                                // Use crate name as default when feature is active
+                                if tcx.features().compartments() {
+                                    let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                                    let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                    CompartmentSet { tags: vec![crate_compartment] }
+                                } else {
+                                    CompartmentSet::default()
+                                }
                             }
                         } else {
-                            CompartmentSet::default()
+                            // Use crate name as default when feature is active
+                            if tcx.features().compartments() {
+                                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                CompartmentSet { tags: vec![crate_compartment] }
+                            } else {
+                                CompartmentSet::default()
+                            }
                         }
                     }
                 } else {
@@ -252,10 +288,24 @@ fn typeck_with_inspect<'tcx>(
                                 get_struct_compartments_from_impl(tcx, local_impl_id)
                             }
                         } else {
-                            CompartmentSet::default()
+                            // Use crate name as default when feature is active
+                            if tcx.features().compartments() {
+                                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                                let crate_compartment = Symbol::intern(&crate_name.as_str());
+                                CompartmentSet { tags: vec![crate_compartment] }
+                            } else {
+                                CompartmentSet::default()
+                            }
                         }
                     } else {
-                        CompartmentSet::default()
+                        // Use crate name as default when feature is active
+                        if tcx.features().compartments() {
+                            let crate_name = tcx.crate_name(def_id.to_def_id().krate);
+                            let crate_compartment = Symbol::intern(&crate_name.as_str());
+                            CompartmentSet { tags: vec![crate_compartment] }
+                        } else {
+                            CompartmentSet::default()
+                        }
                     }
                 }
             }
