@@ -175,6 +175,9 @@ impl<'hir> LoweringContext<'_, 'hir> {
                     };
                     hir::ExprKind::Cast(expr, self.arena.alloc(hir_ty))
                 }
+                ExprKind::CompartmentCast(_, _) => {
+                    panic!("CompartmentCast lowering not yet implemented - HIR variant needed")
+                }
                 ExprKind::Type(expr, ty) => {
                     let expr = self.lower_expr(expr);
                     let ty =

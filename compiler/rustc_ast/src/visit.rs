@@ -973,6 +973,8 @@ macro_rules! common_visitor_and_walkers {
                     visit_visitable!($($mut)? vis, op, subexpression),
                 ExprKind::Cast(subexpression, typ) | ExprKind::Type(subexpression, typ) =>
                     visit_visitable!($($mut)? vis, subexpression, typ),
+                ExprKind::CompartmentCast(subexpression, idents) =>
+                    visit_visitable!($($mut)? vis, subexpression, idents),
                 ExprKind::Let(pat, expr, span, _recovered) =>
                     visit_visitable!($($mut)? vis, pat, expr, span),
                 ExprKind::If(head_expression, if_block, optional_else) =>

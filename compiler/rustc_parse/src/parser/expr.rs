@@ -271,6 +271,9 @@ impl<'a> Parser<'a> {
             if op == AssocOp::Cast {
                 lhs = self.parse_assoc_op_cast(lhs, lhs_span, op_span, |lhs, ty| ExprKind::Cast(lhs, ty))?;
                 continue;
+            } else if op == AssocOp::CompartmentCast {
+                lhs = self.parse_assoc_op_compartment_cast(lhs, lhs_span, op_span)?;
+                continue;
             } else if let AssocOp::Range(limits) = op {
                 // If we didn't have to handle `x..`/`x..=`, it would be pretty easy to
                 // generalise it to the Fixity::None code.
@@ -298,7 +301,7 @@ impl<'a> Parser<'a> {
                     let aopexpr = self.mk_assign_op(source_map::respan(cur_op_span, aop), lhs, rhs);
                     self.mk_expr(span, aopexpr)
                 }
-                AssocOp::Cast | AssocOp::Range(_) => {
+                AssocOp::Cast | AssocOp::CompartmentCast | AssocOp::Range(_) => {
                     self.dcx().span_bug(span, "AssocOp should have been handled by special case")
                 }
             };
@@ -826,6 +829,50 @@ impl<'a> Parser<'a> {
     fn parse_cast_compartments(&mut self) -> PResult<'a, ThinVec<Ident>> {
         // Check for "compartments" keyword first
         if !self.eat_keyword_noexpect(sym::compartments) {
+            return Ok(ThinVec::new());
+        }
+
+        self.expect(exp!(OpenParen))?;
+
+        let mut compartments = ThinVec::new();
+        let mut first = true;
+
+        while !self.check(exp!(CloseParen)) {
+            if !first {
+                self.expect(exp!(Comma))?;
+            }
+            first = false;
+
+            let _span = self.token.span;
+            match self.parse_path_segment_ident() {
+                Ok(ident) => {
+                    compartments.push(ident);
+                }
+                Err(_) => {
+                    self.bump();
+                }
+            }
+        }
+
+        self.expect(exp!(CloseParen))?;
+        Ok(compartments)
+    }
+
+    fn parse_assoc_op_compartment_cast(
+        &mut self,
+        lhs: Box<Expr>,
+        lhs_span: Span,
+        op_span: Span,
+    ) -> PResult<'a, Box<Expr>> {
+        let compartments = self.parse_compas_compartments()?;
+        let kind = ExprKind::CompartmentCast(lhs, compartments);
+        let span = lhs_span.to(op_span);
+        Ok(self.mk_expr(span, kind))
+    }
+
+    fn parse_compas_compartments(&mut self) -> PResult<'a, ThinVec<Ident>> {
+        // Check for "compas" keyword first
+        if !self.eat_keyword_noexpect(kw::Compas) {
             return Ok(ThinVec::new());
         }
 
@@ -4280,6 +4327,7 @@ impl MutVisitor for CondChecker<'_> {
                 self.forbid_let_reason = forbid_let_reason;
             }
             ExprKind::Cast(ref mut op, _)
+            | ExprKind::CompartmentCast(ref mut op, _)
             | ExprKind::Type(ref mut op, _)
             | ExprKind::UnsafeBinderCast(_, ref mut op, _) => {
                 let forbid_let_reason = self.forbid_let_reason;

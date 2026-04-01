@@ -14,6 +14,8 @@ pub enum AssocOp {
     Assign,
     /// `as`
     Cast,
+    /// `compas` - compartment annotation postfix operator
+    CompartmentCast,
     /// `..` or `..=` range
     Range(RangeLimits),
 }
@@ -68,6 +70,7 @@ impl AssocOp {
             // `<-` should probably be `< -`
             token::LArrow => Some(Binary(BinOpKind::Lt)),
             _ if t.is_keyword(kw::As) => Some(Cast),
+            _ if t.is_keyword(kw::Compas) => Some(CompartmentCast),
             _ => None,
         }
     }
@@ -76,7 +79,7 @@ impl AssocOp {
     pub fn precedence(&self) -> ExprPrecedence {
         use AssocOp::*;
         match *self {
-            Cast => ExprPrecedence::Cast,
+            Cast | CompartmentCast => ExprPrecedence::Cast,
             Binary(bin_op) => bin_op.precedence(),
             Range(_) => ExprPrecedence::Range,
             Assign | AssignOp(_) => ExprPrecedence::Assign,
@@ -90,7 +93,7 @@ impl AssocOp {
         match *self {
             Assign | AssignOp(_) => Fixity::Right,
             Binary(binop) => binop.fixity(),
-            Cast => Fixity::Left,
+            Cast | CompartmentCast => Fixity::Left,
             Range(_) => Fixity::None,
         }
     }
@@ -99,7 +102,7 @@ impl AssocOp {
         use AssocOp::*;
         match *self {
             Binary(binop) => binop.is_comparison(),
-            Assign | AssignOp(_) | Cast | Range(_) => false,
+            Assign | AssignOp(_) | Cast | CompartmentCast | Range(_) => false,
         }
     }
 
@@ -107,7 +110,7 @@ impl AssocOp {
         use AssocOp::*;
         match *self {
             Assign | AssignOp(_) => true,
-            Cast | Binary(_) | Range(_) => false,
+            Cast | CompartmentCast | Binary(_) | Range(_) => false,
         }
     }
 
@@ -133,7 +136,8 @@ impl AssocOp {
             AssignOp(_) | // `{ 42 } +=`
             // Equal | // `{ 42 } == { 42 }`    Accepting these here would regress incorrect
             // NotEqual | // `{ 42 } != { 42 }  struct literals parser recovery.
-            Cast // `{ 42 } as usize`
+            Cast | // `{ 42 } as usize`
+            CompartmentCast // `{ 42 } compas(c1, c2)`
         )
     }
 }
@@ -202,6 +206,7 @@ pub fn contains_exterior_struct_lit(value: &ast::Expr) -> bool {
         ast::ExprKind::Await(x, _)
         | ast::ExprKind::Unary(_, x)
         | ast::ExprKind::Cast(x, _)
+        | ast::ExprKind::CompartmentCast(x, _)
         | ast::ExprKind::Type(x, _)
         | ast::ExprKind::Field(x, _)
         | ast::ExprKind::Index(x, _, _)

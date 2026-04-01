@@ -310,7 +310,8 @@ impl<'a> State<'a> {
             // These cases need parens: `x as i32 < y` has the parser thinking that `i32 < y` is
             // the beginning of a path type. It starts trying to parse `x as (i32 < y ...` instead
             // of `(x as i32) < ...`. We need to convince it _not_ to do that.
-            (&ast::ExprKind::Cast { .. }, ast::BinOpKind::Lt | ast::BinOpKind::Shl) => {
+            (&ast::ExprKind::Cast { .. }, ast::BinOpKind::Lt | ast::BinOpKind::Shl)
+            | (&ast::ExprKind::CompartmentCast { .. }, ast::BinOpKind::Lt | ast::BinOpKind::Shl) => {
                 left_needs_paren = true;
             }
             // We are given `(let _ = a) OP b`.
@@ -422,6 +423,7 @@ impl<'a> State<'a> {
                     expr.kind,
                     ast::ExprKind::Binary(..)
                         | ast::ExprKind::Cast(..)
+                        | ast::ExprKind::CompartmentCast(..)
                         | ast::ExprKind::Assign(..)
                         | ast::ExprKind::AssignOp(..)
                         | ast::ExprKind::Range(..)
@@ -485,6 +487,21 @@ impl<'a> State<'a> {
                 self.space();
                 self.word_space("as");
                 self.print_type(ty);
+            }
+            ast::ExprKind::CompartmentCast(expr, idents) => {
+                self.print_expr_cond_paren(
+                    expr,
+                    expr.precedence() < ExprPrecedence::Cast,
+                    fixup.leftmost_subexpression(),
+                );
+                self.word(" compas(");
+                for (i, ident) in idents.iter().enumerate() {
+                    if i > 0 {
+                        self.word(", ");
+                    }
+                    self.print_ident(*ident);
+                }
+                self.word(")");
             }
             ast::ExprKind::Type(expr, ty) => {
                 self.word("builtin # type_ascribe");

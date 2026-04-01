@@ -1548,7 +1548,7 @@ impl Expr {
 
             // Binop-like expr kinds, handled by `AssocOp`.
             ExprKind::Binary(op, ..) => op.node.precedence(),
-            ExprKind::Cast(..) => ExprPrecedence::Cast,
+            ExprKind::Cast(..) | ExprKind::CompartmentCast(..) => ExprPrecedence::Cast,
 
             ExprKind::Assign(..) |
             ExprKind::AssignOp(..) => ExprPrecedence::Assign,
@@ -1727,6 +1727,10 @@ pub enum ExprKind {
     Lit(token::Lit),
     /// A cast (e.g., `foo as f64`).
     Cast(Box<Expr>, Box<Ty>),
+    /// A compartment cast (e.g., `foo compas(c1, c2)`).
+    ///
+    /// Attaches compartment annotations to an expression without changing its type.
+    CompartmentCast(Box<Expr>, ThinVec<Ident>),
     /// A type ascription (e.g., `builtin # type_ascribe(42, usize)`).
     ///
     /// Usually not written directly in user code but
