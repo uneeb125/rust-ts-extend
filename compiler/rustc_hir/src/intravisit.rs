@@ -854,6 +854,12 @@ pub fn walk_expr<'v, V: Visitor<'v>>(visitor: &mut V, expression: &'v Expr<'v>) 
             try_visit!(visitor.visit_expr(subexpression));
             try_visit!(visitor.visit_ty_unambig(typ));
         }
+        ExprKind::CompartmentCast(ref subexpression, ref idents) => {
+            try_visit!(visitor.visit_expr(subexpression));
+            for ident in idents.iter() {
+                try_visit!(visitor.visit_ident(*ident));
+            }
+        }
         ExprKind::DropTemps(ref subexpression) => {
             try_visit!(visitor.visit_expr(subexpression));
         }

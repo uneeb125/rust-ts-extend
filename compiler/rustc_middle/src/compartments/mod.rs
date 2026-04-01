@@ -33,6 +33,10 @@ impl CompartmentSet {
         Self { tags }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty()
+    }
+
     pub fn is_sudo(&self) -> bool {
         self.tags.iter().any(|s| s.as_str() == "sudo")
     }

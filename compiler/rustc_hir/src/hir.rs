@@ -2344,7 +2344,7 @@ impl Expr<'_> {
 
             // Binop-like expr kinds, handled by `AssocOp`.
             ExprKind::Binary(op, ..) => op.node.precedence(),
-            ExprKind::Cast(..) => ExprPrecedence::Cast,
+            ExprKind::Cast(..) | ExprKind::CompartmentCast(..) => ExprPrecedence::Cast,
 
             ExprKind::Assign(..) |
             ExprKind::AssignOp(..) => ExprPrecedence::Assign,
@@ -2456,6 +2456,7 @@ impl Expr<'_> {
             | ExprKind::Binary(..)
             | ExprKind::Yield(..)
             | ExprKind::Cast(..)
+            | ExprKind::CompartmentCast(..)
             | ExprKind::DropTemps(..) => false,
         }
     }
@@ -2518,6 +2519,7 @@ impl Expr<'_> {
             | ExprKind::Index(base, _, _)
             | ExprKind::AddrOf(.., base)
             | ExprKind::Cast(base, _)
+            | ExprKind::CompartmentCast(base, _)
             | ExprKind::UnsafeBinderCast(_, base, _) => {
                 // This isn't exactly true for `Index` and all `Unary`, but we are using this
                 // method exclusively for diagnostics and there's a *cultural* pressure against
@@ -2798,6 +2800,10 @@ pub enum ExprKind<'hir> {
     Lit(Lit),
     /// A cast (e.g., `foo as f64`).
     Cast(&'hir Expr<'hir>, &'hir Ty<'hir>),
+    /// A compartment cast (e.g., `foo compas(c1, c2)`).
+    ///
+    /// Attaches compartment annotations to an expression without changing its type.
+    CompartmentCast(&'hir Expr<'hir>, &'hir [Ident]),
     /// A type ascription (e.g., `x: Foo`). See RFC 3307.
     Type(&'hir Expr<'hir>, &'hir Ty<'hir>),
     /// Wraps the expression in a terminating scope.

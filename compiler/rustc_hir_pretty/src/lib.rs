@@ -1512,6 +1512,17 @@ impl<'a> State<'a> {
                     self.word(")");
                 }
             }
+            hir::ExprKind::CompartmentCast(expr, idents) => {
+                self.print_expr_cond_paren(expr, self.precedence(expr) < ExprPrecedence::Cast);
+                self.word(" compas comp(");
+                for (i, ident) in idents.iter().enumerate() {
+                    if i > 0 {
+                        self.word(", ");
+                    }
+                    self.print_ident(*ident);
+                }
+                self.word(")");
+            }
             hir::ExprKind::Type(expr, ty) => {
                 self.word("type_ascribe!(");
                 let ib = self.ibox(0);

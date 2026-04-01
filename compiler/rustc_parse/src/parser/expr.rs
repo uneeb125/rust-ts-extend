@@ -864,18 +864,12 @@ impl<'a> Parser<'a> {
         lhs_span: Span,
         op_span: Span,
     ) -> PResult<'a, Box<Expr>> {
-        let compartments = self.parse_compas_compartments()?;
-        let kind = ExprKind::CompartmentCast(lhs, compartments);
-        let span = lhs_span.to(op_span);
-        Ok(self.mk_expr(span, kind))
-    }
-
-    fn parse_compas_compartments(&mut self) -> PResult<'a, ThinVec<Ident>> {
-        // Check for "compas" keyword first
-        if !self.eat_keyword_noexpect(kw::Compas) {
-            return Ok(ThinVec::new());
+        // Expect "comp" keyword followed by "(c1, c2)"
+        if !self.eat_keyword_noexpect(kw::Comp) {
+            self.dcx().span_err(op_span, "expected `comp(...)` after `compas`");
+            return Ok(lhs);
         }
-
+        
         self.expect(exp!(OpenParen))?;
 
         let mut compartments = ThinVec::new();
@@ -899,7 +893,10 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(exp!(CloseParen))?;
-        Ok(compartments)
+
+        let kind = ExprKind::CompartmentCast(lhs, compartments);
+        let span = lhs_span.to(self.prev_token.span);
+        Ok(self.mk_expr(span, kind))
     }
 
     /// Parse `& mut? <expr>` or `& raw [ const | mut ] <expr>`.

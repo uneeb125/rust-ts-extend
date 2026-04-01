@@ -401,6 +401,10 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
                 self.walk_expr(subexpr)?;
             }
 
+            hir::ExprKind::CompartmentCast(subexpr, _) => {
+                self.walk_expr(subexpr)?;
+            }
+
             hir::ExprKind::Unary(hir::UnOp::Deref, base) => {
                 // *base
                 self.walk_expr(base)?;
@@ -1419,6 +1423,7 @@ impl<'tcx, Cx: TypeInformationCtxt<'tcx>, D: Delegate<'tcx>> ExprUseVisitor<'tcx
             | hir::ExprKind::Yield(..)
             | hir::ExprKind::MethodCall(..)
             | hir::ExprKind::Cast(..)
+            | hir::ExprKind::CompartmentCast(..)
             | hir::ExprKind::DropTemps(..)
             | hir::ExprKind::Array(..)
             | hir::ExprKind::If(..)

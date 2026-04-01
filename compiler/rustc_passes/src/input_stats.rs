@@ -356,6 +356,7 @@ impl<'v> hir_visit::Visitor<'v> for StatCollector<'v> {
                 Unary,
                 Lit,
                 Cast,
+                CompartmentCast,
                 Type,
                 DropTemps,
                 Let,

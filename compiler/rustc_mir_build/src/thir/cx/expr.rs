@@ -1096,6 +1096,14 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     cast
                 }
             }
+            hir::ExprKind::CompartmentCast(source, _idents) => {
+                // CompartmentCast is an identity cast - just mirror the source
+                // but record the compartments
+                let mirrored = self.mirror_expr(source);
+                // For now, just return Use to pass through the expression
+                // The compartments from the HIR will be handled in type checking
+                ExprKind::Use { source: mirrored }
+            }
             hir::ExprKind::Type(source, ty) => {
                 let user_provided_types = self.typeck_results.user_provided_types();
                 let user_ty = user_provided_types.get(ty.hir_id).copied().map(Box::new);

@@ -111,6 +111,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Cast expression - get compartments from Ty
                 CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
             }
+            hir::ExprKind::CompartmentCast(_, idents) => {
+                // CompartmentCast - get compartments directly from expression
+                CompartmentSet::from_iter(idents.iter().map(|ident| ident.name))
+            }
             hir::ExprKind::Unary(_, subexpr) => {
                 // Unary expressions (like unsafe {})
                 self.find_compartments_in_expr(subexpr)
@@ -1274,6 +1278,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Cast expression - get compartments from Ty
                 init_compartments = CompartmentSet::from_iter(
                     ty.compartments.iter().map(|ident| ident.name)
+                );
+            } else if let hir::ExprKind::CompartmentCast(_, idents) = &init.kind {
+                // CompartmentCast expression - get compartments directly
+                init_compartments = CompartmentSet::from_iter(
+                    idents.iter().map(|ident| ident.name)
                 );
             } else {
                 // Look for compartments in nested expressions (unsafe blocks, blocks, etc.)

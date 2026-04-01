@@ -369,7 +369,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                     // Place-preserving expressions only constitute reads if their
                     // parent expression constitutes a read.
-                    ExprKind::Type(..) | ExprKind::UnsafeBinderCast(..) => {
+                    ExprKind::Type(..) | ExprKind::UnsafeBinderCast(..) | ExprKind::CompartmentCast(..) => {
                         self.expr_guaranteed_to_constitute_read_for_never(expr)
                     }
 
@@ -594,6 +594,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 self.check_expr_method_call(expr, segment, receiver, args, expected)
             }
             ExprKind::Cast(e, t) => self.check_expr_cast(e, t, expr),
+            ExprKind::CompartmentCast(e, idents) => {
+                let ty = self.check_expr_with_expectation(e, expected);
+                // Record the compartments on this expression
+                let compartments = CompartmentSet::from_iter(idents.iter().map(|i| i.name));
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                    expr.hir_id,
+                    compartments.clone(),
+                );
+                // CompartmentCast requires unsafe
+                if !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
+                    self.tcx.dcx().span_err(
+                        expr.span,
+                        "compartment cast requires an `unsafe` block",
+                    );
+                }
+                ty
+            }
             ExprKind::Type(e, t) => {
                 let ascribed_ty = self.lower_ty_saving_user_provided_ty(t);
                 let ty = self.check_expr_with_hint(e, ascribed_ty);
@@ -1511,6 +1528,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let rhs_compartments = if let hir::ExprKind::Cast(_, ty) = &rhs.kind {
             // Cast expression - get compartments from Ty
             CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
+        } else if let hir::ExprKind::CompartmentCast(_, idents) = &rhs.kind {
+            // CompartmentCast expression - get compartments directly from expression
+            CompartmentSet::from_iter(idents.iter().map(|ident| ident.name))
         } else {
             // Look for compartments in nested expressions
             self.find_compartments_in_expr(rhs)

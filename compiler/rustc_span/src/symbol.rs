@@ -127,6 +127,7 @@ symbols! {
         Auto:               "auto",
         Builtin:            "builtin",
         Catch:              "catch",
+        Comp:               "comp",
         Compas:             "compas",
         ContractEnsures:    "contract_ensures",
         ContractRequires:   "contract_requires",

@@ -324,6 +324,7 @@ fn is_temporary_rvalue(expr: &Expr<'_>) -> bool {
 
         // We are not interested in these
         ExprKind::Cast(..)
+        | ExprKind::CompartmentCast(..)
         | ExprKind::Closure(..)
         | ExprKind::Tup(..)
         | ExprKind::DropTemps(..)
