@@ -298,7 +298,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                     return impl_compartments;
                 }
                 
-                // 3. Check the associated type's (struct/enum/union) explicit compartments
+                // 3. Check the associated type's (struct/enum/union) compartments using compartment_set query
                 let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
                 if let hir::Node::Item(hir::Item { 
                     kind: hir::ItemKind::Impl(impl_block), 
@@ -307,14 +307,13 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                     let self_ty = impl_block.self_ty;
                     if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = self_ty.kind {
                         if let Res::Def(DefKind::Struct | DefKind::Enum | DefKind::Union, adt_def_id) = path.res {
-                            if let Some(local_adt_id) = adt_def_id.as_local() {
-                                let adt_compartments = Self::get_explicit_compartments(tcx, local_adt_id);
-                                if debug {
-                                    eprintln!("DEBUG: get_impl_method_compartments: ADT {:?} has explicit compartments: {:?}", adt_def_id, adt_compartments.tags);
-                                }
-                                if Self::has_explicit_compartments(&adt_compartments) {
-                                    return adt_compartments;
-                                }
+                            // Use compartment_set query which has get_self_type_compartments logic
+                            let adt_compartments = tcx.compartment_set(adt_def_id);
+                            if debug {
+                                eprintln!("DEBUG: get_impl_method_compartments: ADT {:?} has compartments: {:?}", adt_def_id, adt_compartments.tags);
+                            }
+                            if Self::has_explicit_compartments(&adt_compartments) {
+                                return adt_compartments.clone();
                             }
                         }
                     }

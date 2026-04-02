@@ -78,10 +78,10 @@ fn get_struct_compartments_from_impl(tcx: TyCtxt<'_>, local_impl_id: LocalDefId)
         ..
     }) = tcx.hir_node(impl_hir_id) {
         if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
-            if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
-                if let Some(local_struct_id) = struct_def_id.as_local() {
-                    let struct_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_struct_id));
-                    if let Some(attr) = struct_attrs.iter().find_map(|attr| {
+            if let Res::Def(DefKind::Struct | DefKind::Enum | DefKind::Union, adt_def_id) = path.res {
+                if let Some(local_adt_id) = adt_def_id.as_local() {
+                    let adt_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_adt_id));
+                    if let Some(attr) = adt_attrs.iter().find_map(|attr| {
                         if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
                             Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
                         } else {

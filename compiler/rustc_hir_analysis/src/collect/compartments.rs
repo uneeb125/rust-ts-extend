@@ -183,8 +183,15 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
 
 /// For trait impl methods or derive-generated impl methods, get the compartments from the self type
 fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+        println!("DEBUG: get_self_type_compartments called for {:?}", tcx.def_path_str(def_id));
+    }
+    
     // First check if this is an associated item in an impl or trait
     if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+            println!("DEBUG: impl_of_assoc returned {:?}", tcx.def_path_str(impl_def_id));
+        }
         // Get the self type from the impl block
         let local_impl_id = impl_def_id.as_local()?;
         let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
@@ -196,23 +203,39 @@ fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
             ..
         }) = impl_item {
             let self_ty = impl_block.self_ty;
+            if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                println!("DEBUG: impl self_ty kind = {:?}", self_ty.kind);
+            }
             if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = self_ty.kind {
                 if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
                     if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
+                        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                            println!("DEBUG: Found ADT def_id = {:?}", tcx.def_path_str(adt_def_id));
+                        }
                         // Recursively get compartments for the self type
                         let adt_compartments = compartment_set(tcx, adt_def_id);
+                        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                            println!("DEBUG: ADT compartments = {:?}", adt_compartments.tags);
+                        }
                         // Only return if the self type has explicit compartments (not just crate default)
                         if !adt_compartments.tags.is_empty() {
                             let crate_name = tcx.crate_name(def_id.krate);
                             let is_crate_default = adt_compartments.tags.len() == 1 && 
                                 adt_compartments.tags[0].as_str() == crate_name.as_str();
                             if !is_crate_default {
+                                if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                                    println!("DEBUG: Returning ADT compartments");
+                                }
                                 return Some(adt_compartments);
                             }
                         }
                     }
                 }
             }
+        }
+    } else {
+        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+            println!("DEBUG: impl_of_assoc returned None for {:?}", tcx.def_path_str(def_id));
         }
     }
     
