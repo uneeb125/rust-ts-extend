@@ -256,7 +256,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
     }
 
     /// Get compartments from an impl block or trait impl for a method
-    /// Priority: method's own explicit -> impl block explicit -> struct explicit -> crate name default
+    /// Priority: method's own explicit -> impl block explicit -> self type explicit (struct/enum/union) -> crate name default
     pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
         let debug = std::env::var("COMPARTMENT_DEBUG").is_ok();
         
@@ -281,7 +281,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                     return impl_compartments;
                 }
                 
-                // 3. Check the associated struct's explicit compartments
+                // 3. Check the associated type's (struct/enum/union) explicit compartments
                 let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
                 if let hir::Node::Item(hir::Item { 
                     kind: hir::ItemKind::Impl(impl_block), 
@@ -289,14 +289,14 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                 }) = tcx.hir_node(impl_hir_id) {
                     let self_ty = impl_block.self_ty;
                     if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = self_ty.kind {
-                        if let Res::Def(DefKind::Struct, struct_def_id) = path.res {
-                            if let Some(local_struct_id) = struct_def_id.as_local() {
-                                let struct_compartments = Self::get_explicit_compartments(tcx, local_struct_id);
+                        if let Res::Def(DefKind::Struct | DefKind::Enum | DefKind::Union, adt_def_id) = path.res {
+                            if let Some(local_adt_id) = adt_def_id.as_local() {
+                                let adt_compartments = Self::get_explicit_compartments(tcx, local_adt_id);
                                 if debug {
-                                    eprintln!("DEBUG: get_impl_method_compartments: struct {:?} has explicit compartments: {:?}", struct_def_id, struct_compartments.tags);
+                                    eprintln!("DEBUG: get_impl_method_compartments: ADT {:?} has explicit compartments: {:?}", adt_def_id, adt_compartments.tags);
                                 }
-                                if Self::has_explicit_compartments(&struct_compartments) {
-                                    return struct_compartments;
+                                if Self::has_explicit_compartments(&adt_compartments) {
+                                    return adt_compartments;
                                 }
                             }
                         }
