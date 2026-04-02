@@ -136,6 +136,14 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
 
     // Return default compartment if none specified
     if raw_tags.is_empty() {
+        // For trait impl methods or derive-generated impl methods, check the self type's compartments
+        if let Some(self_type_compartments) = get_self_type_compartments(tcx, def_id) {
+            if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                println!("DEBUG: Using self type compartments for {:?}: {:?}", def_id, self_type_compartments.tags);
+            }
+            return self_type_compartments;
+        }
+        
         // Use crate name as default when feature is active
         if tcx.features().compartments() {
             let crate_name = tcx.crate_name(def_id.krate);
@@ -146,4 +154,42 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
     }
 
     CompartmentSet::from_iter(raw_tags)
+}
+
+/// For trait impl methods or derive-generated impl methods, get the compartments from the self type
+fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    // Check if this def_id is an associated item in an impl or trait
+    let impl_def_id = tcx.impl_of_assoc(def_id)?;
+    
+    // Get the self type from the impl block
+    let local_impl_id = impl_def_id.as_local()?;
+    let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+    
+    // Look at the impl block to find self_ty
+    let impl_item = tcx.hir_node(impl_hir_id);
+    if let rustc_hir::Node::Item(rustc_hir::Item {
+        kind: rustc_hir::ItemKind::Impl(impl_block),
+        ..
+    }) = impl_item {
+        let self_ty = impl_block.self_ty;
+        if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = self_ty.kind {
+            if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
+                if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
+                    // Recursively get compartments for the self type
+                    let adt_compartments = compartment_set(tcx, adt_def_id);
+                    // Only return if the self type has explicit compartments (not just crate default)
+                    if !adt_compartments.tags.is_empty() {
+                        let crate_name = tcx.crate_name(def_id.krate);
+                        let is_crate_default = adt_compartments.tags.len() == 1 && 
+                            adt_compartments.tags[0].as_str() == crate_name.as_str();
+                        if !is_crate_default {
+                            return Some(adt_compartments);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    None
 }
