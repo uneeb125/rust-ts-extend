@@ -23,7 +23,7 @@ use crate::attributes::codegen_attrs::{
     NoMangleParser, ObjcClassParser, ObjcSelectorParser, OptimizeParser, SanitizeParser,
     TargetFeatureParser, TrackCallerParser, UsedParser,
 };
-use crate::attributes::compartments::CompartmentsParser;
+use crate::attributes::compartments::{CompartmentsParser, TrustedCompartmentsParser};
 use crate::attributes::confusables::ConfusablesParser;
 use crate::attributes::crate_level::{
     CrateNameParser, MoveSizeLimitParser, NoCoreParser, NoStdParser, PatternComplexityLimitParser,
@@ -166,6 +166,7 @@ attribute_parsers!(
         Combine<AllowConstFnUnstableParser>,
         Combine<AllowInternalUnstableParser>,
         Combine<CompartmentsParser>,
+        Combine<TrustedCompartmentsParser>,
         Combine<DebuggerViualizerParser>,
         Combine<ForceTargetFeatureParser>,
         Combine<LinkParser>,

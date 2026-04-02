@@ -584,6 +584,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         );
 
         if let Some(def_id) = def_id {
+            // Get trusted compartments for the current function context
+            let current_def_id = self.body_id.to_def_id();
+            let trusted = self.tcx.trusted_compartments(current_def_id).clone();
+
             if let Some(local_def_id) = def_id.as_local() {
                 let fn_compartments: rustc_middle::compartments::CompartmentSet = if self.tcx.impl_of_assoc(def_id).is_some() {
                     // For impl methods, use the hierarchy (method -> impl -> struct)
@@ -613,8 +617,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
                     }
                     
-                    // Check if argument's compartment is allowed by function's compartments
-                    if !arg_compartments.tags.is_empty() && !fn_compartments.can_access(&arg_compartments) {
+                    // Check if argument's compartment is allowed by function's compartments (with trusted bypass)
+                    if !arg_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&arg_compartments, &trusted) {
                         self.tcx.dcx().span_err(
                             arg.span,
                             format!(
@@ -636,8 +640,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     self.tcx.def_path_str(type_def_id), type_compartments.tags);
                             }
 
-                            // Check if the argument's type compartments are allowed by function's compartments
-                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access(&type_compartments) {
+                            // Check if the argument's type compartments are allowed by function's compartments (with trusted bypass)
+                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(

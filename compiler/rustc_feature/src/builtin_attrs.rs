@@ -867,6 +867,13 @@ pub static BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         "experimental compartment system"
     ),
 
+    // `#[trusted_compartments(c1, c2)]` attribute to declare trusted compartments
+    gated!(
+        trusted_compartments, Normal, template!(List: &["c1", "c2"]), WarnFollowing,
+        EncodeCrossCrate::No, compartments,
+        "experimental compartment system"
+    ),
+
     // `#[coroutine]` attribute to be applied to closures to make them coroutines instead
     gated!(
         coroutine, Normal, template!(Word), ErrorFollowing,

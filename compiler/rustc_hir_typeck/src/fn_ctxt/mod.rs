@@ -207,18 +207,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     ) -> CompartmentSet {
         let current = self.current_compartment();
         let target = self.tcx.compartment_set(target_def).clone();
+        
+        // Get trusted compartments for the current context
+        let current_def_id = self.body_id.to_def_id();
+        let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
         if std::env::var("MY_DEBUG_TYPECK").is_ok() {
             println!(
-                "DEBUG: check_compartment_access: current={:?}, target={:?}, can_access={}, target_def={:?}",
+                "DEBUG: check_compartment_access: current={:?}, target={:?}, can_access={}, target_def={:?}, trusted={:?}",
                 current.tags,
                 target.tags,
-                current.can_access(&target),
-                target_def
+                current.can_access_with_trusted(&target, &trusted),
+                target_def,
+                trusted.tags
             );
         }
 
-        if !current.can_access(&target) {
+        if !current.can_access_with_trusted(&target, &trusted) {
             let err = self.tcx.dcx().struct_span_err(
                 span,
                 format!(

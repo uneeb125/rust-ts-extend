@@ -206,6 +206,7 @@ symbols! {
         Cleanup,
         Compartments,
         compartments,
+        trusted_compartments,
         Clone,
         CoercePointee,
         CoercePointeeValidated,

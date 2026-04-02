@@ -98,6 +98,7 @@ pub(crate) fn provide(providers: &mut Providers) {
         const_param_default,
         anon_const_kind,
         compartment_set: compartments::compartment_set,
+        trusted_compartments: compartments::trusted_compartments,
         ..*providers
     };
 }

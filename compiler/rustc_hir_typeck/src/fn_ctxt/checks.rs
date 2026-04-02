@@ -1293,8 +1293,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
+            
+            // Get trusted compartments for the current context
+            let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
+            let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access(&init_compartments) {
+            if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(

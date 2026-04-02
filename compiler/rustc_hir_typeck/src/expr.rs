@@ -1538,10 +1538,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let current_compartments = self.root_ctxt.current_compartments.clone();
 
+        // Get trusted compartments for the current context
+        let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
+        let trusted = self.tcx.trusted_compartments(current_def_id).clone();
+
         // Check if assignment is inside unsafe block
         let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
 
-        if !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access(&rhs_compartments) {
+        if !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(
@@ -1778,6 +1782,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 self.check_call_abi(method.sig.abi, expr.span);
 
+                // Get trusted compartments for the current context
+                let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
+                let trusted = self.tcx.trusted_compartments(current_def_id).clone();
+
                 // Check compartments for method call
                 if let Some(def_id) = method.def_id.as_local() {
                     let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
@@ -1789,7 +1797,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
                     }
 
-                    // Check if argument types' compartments are allowed by method's declared compartments
+                    // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
                     for arg in args {
                         let arg_ty = self.typeck_results.borrow().expr_ty(arg);
 
@@ -1803,8 +1811,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     self.tcx.def_path_str(type_def_id), type_compartments.tags);
                             }
 
-                            // Check if the argument's type compartments are allowed by method's compartments
-                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access(&type_compartments) {
+                            // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
+                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(
@@ -2189,12 +2197,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             eprintln!("DEBUG: check_expr_struct: effective compartments: {:?}", effective_struct_compartments.tags);
         }
 
+        // Get trusted compartments for the current context
+        let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
+        let trusted = self.tcx.trusted_compartments(current_def_id).clone();
+
         if !effective_struct_compartments.tags.is_empty() && !effective_struct_compartments.tags.iter().all(|t: &Symbol| t.as_str() == "Default") {
             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                 eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
             }
 
-            if !current_compartments.can_access(&effective_struct_compartments) {
+            if !current_compartments.can_access_with_trusted(&effective_struct_compartments, &trusted) {
                 self.tcx.dcx().span_err(
                     expr.span,
                     format!(

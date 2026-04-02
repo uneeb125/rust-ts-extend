@@ -54,4 +54,23 @@ impl CompartmentSet {
         }
         self.tags == other.tags
     }
+
+    /// Check if `self` (current scope) can access `target` compartments.
+    /// If any tag in `target` is in `trusted`, skip the check for that tag.
+    /// This enables "trusted compartments" - compartments that bypass access checks.
+    pub fn can_access_with_trusted(&self, target: &Self, trusted: &Self) -> bool {
+        if self.is_sudo() || target.is_sudo() {
+            return true;
+        }
+        // If any target tag is trusted, we skip the containment check for that tag
+        let untrusted_target_tags: Vec<_> = target
+            .tags
+            .iter()
+            .filter(|t| !trusted.tags.contains(t))
+            .cloned()
+            .collect();
+        
+        // All non-trusted target tags must be in current scope
+        untrusted_target_tags.iter().all(|t| self.tags.contains(t))
+    }
 }

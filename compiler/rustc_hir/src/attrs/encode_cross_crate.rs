@@ -100,6 +100,7 @@ impl AttributeKind {
             StdInternalSymbol(..) => No,
             TargetFeature { .. } => No,
             TrackCaller(..) => Yes,
+            TrustedCompartments(..) => No,
             TypeConst(..) => Yes,
             TypeLengthLimit { .. } => No,
             UnsafeSpecializationMarker(..) => No,

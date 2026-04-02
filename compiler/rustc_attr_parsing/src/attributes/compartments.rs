@@ -68,3 +68,40 @@ fn parse_unstable<S: Stage>(
 
     res
 }
+
+pub(crate) struct TrustedCompartmentsParser;
+impl<S: Stage> CombineAttributeParser<S> for TrustedCompartmentsParser {
+    const PATH: &[Symbol] = &[sym::trusted_compartments];
+    type Item = (Symbol, Span);
+    const CONVERT: ConvertFn<Self::Item> = |items, span| AttributeKind::TrustedCompartments(items, span);
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Crate),
+        Allow(Target::Fn),
+        Allow(Target::Static),
+        Allow(Target::Struct),
+        Allow(Target::Union),
+        Allow(Target::Enum),
+        Allow(Target::Trait),
+        Allow(Target::Impl { of_trait: false }),
+        Allow(Target::Impl { of_trait: true }),
+        Allow(Target::Mod),
+        Allow(Target::ForeignMod),
+        Allow(Target::TyAlias),
+        Allow(Target::MacroDef),
+        Allow(Target::Const),
+        Allow(Target::AssocConst),
+        Allow(Target::AssocTy),
+        Allow(Target::Field),
+        Allow(Target::Method(MethodKind::Inherent)),
+    ]);
+    const TEMPLATE: AttributeTemplate = template!(List: &["c1", "c2"]);
+
+    fn extend<'c>(
+        cx: &'c mut AcceptContext<'_, '_, S>,
+        args: &'c ArgParser<'_>,
+    ) -> impl IntoIterator<Item = Self::Item> {
+        parse_unstable(cx, args, <Self as CombineAttributeParser<S>>::PATH[0])
+            .into_iter()
+            .zip(iter::repeat(cx.attr_span))
+    }
+}
