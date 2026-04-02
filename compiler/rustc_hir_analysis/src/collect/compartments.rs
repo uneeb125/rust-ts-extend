@@ -58,6 +58,31 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
             if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                 println!("DEBUG: Reached crate root, no trusted compartments found");
             }
+            
+            // For #[automatically_derived] code (e.g., derive macros), inherit trusted compartments from self type
+            if tcx.is_automatically_derived(def_id) {
+                if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+                    if let Some(local_impl_id) = impl_def_id.as_local() {
+                        let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+                        if let rustc_hir::Node::Item(rustc_hir::Item {
+                            kind: rustc_hir::ItemKind::Impl(impl_block),
+                            ..
+                        }) = tcx.hir_node(impl_hir_id) {
+                            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
+                                if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
+                                    if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
+                                        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                                            println!("DEBUG: #[automatically_derived] code, inheriting trusted compartments from self type {:?}", adt_def_id);
+                                        }
+                                        return trusted_compartments(tcx, adt_def_id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
             return CompartmentSet::empty();
         }
 
@@ -158,34 +183,57 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
 
 /// For trait impl methods or derive-generated impl methods, get the compartments from the self type
 fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
-    // Check if this def_id is an associated item in an impl or trait
-    let impl_def_id = tcx.impl_of_assoc(def_id)?;
-    
-    // Get the self type from the impl block
-    let local_impl_id = impl_def_id.as_local()?;
-    let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
-    
-    // Look at the impl block to find self_ty
-    let impl_item = tcx.hir_node(impl_hir_id);
-    if let rustc_hir::Node::Item(rustc_hir::Item {
-        kind: rustc_hir::ItemKind::Impl(impl_block),
-        ..
-    }) = impl_item {
-        let self_ty = impl_block.self_ty;
-        if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = self_ty.kind {
-            if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
-                if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
-                    // Recursively get compartments for the self type
-                    let adt_compartments = compartment_set(tcx, adt_def_id);
-                    // Only return if the self type has explicit compartments (not just crate default)
-                    if !adt_compartments.tags.is_empty() {
-                        let crate_name = tcx.crate_name(def_id.krate);
-                        let is_crate_default = adt_compartments.tags.len() == 1 && 
-                            adt_compartments.tags[0].as_str() == crate_name.as_str();
-                        if !is_crate_default {
-                            return Some(adt_compartments);
+    // First check if this is an associated item in an impl or trait
+    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+        // Get the self type from the impl block
+        let local_impl_id = impl_def_id.as_local()?;
+        let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+        
+        // Look at the impl block to find self_ty
+        let impl_item = tcx.hir_node(impl_hir_id);
+        if let rustc_hir::Node::Item(rustc_hir::Item {
+            kind: rustc_hir::ItemKind::Impl(impl_block),
+            ..
+        }) = impl_item {
+            let self_ty = impl_block.self_ty;
+            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = self_ty.kind {
+                if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
+                    if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
+                        // Recursively get compartments for the self type
+                        let adt_compartments = compartment_set(tcx, adt_def_id);
+                        // Only return if the self type has explicit compartments (not just crate default)
+                        if !adt_compartments.tags.is_empty() {
+                            let crate_name = tcx.crate_name(def_id.krate);
+                            let is_crate_default = adt_compartments.tags.len() == 1 && 
+                                adt_compartments.tags[0].as_str() == crate_name.as_str();
+                            if !is_crate_default {
+                                return Some(adt_compartments);
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+    
+    // Check if this is a variant constructor (Ctor(Variant, ...))
+    // Variant constructors are not impl items, so impl_of_assoc returns None
+    // But we can check if the parent item is an enum/struct/union
+    if def_id.is_local() {
+        let local_def_id = def_id.expect_local();
+        let hir_id = tcx.local_def_id_to_hir_id(local_def_id);
+        let parent_item = tcx.hir_get_parent_item(hir_id);
+        
+        // Check if parent is an enum/struct/union
+        let parent_def_kind = tcx.def_kind(parent_item.to_def_id());
+        if matches!(parent_def_kind, rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Union) {
+            let adt_compartments = compartment_set(tcx, parent_item.to_def_id());
+            if !adt_compartments.tags.is_empty() {
+                let crate_name = tcx.crate_name(def_id.krate);
+                let is_crate_default = adt_compartments.tags.len() == 1 && 
+                    adt_compartments.tags[0].as_str() == crate_name.as_str();
+                if !is_crate_default {
+                    return Some(adt_compartments);
                 }
             }
         }
