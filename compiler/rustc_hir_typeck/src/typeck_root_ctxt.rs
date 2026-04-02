@@ -271,6 +271,23 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
         
         // 2. Check the impl block's explicit compartments
         let def_id = def_id.to_def_id();
+        
+        // Handle trait methods: if impl_of_assoc returns None, check trait_of_assoc
+        if tcx.impl_of_assoc(def_id).is_none() {
+            // This might be a trait method - check the trait's compartments
+            if let Some(trait_id) = tcx.trait_of_assoc(def_id) {
+                if let Some(local_trait_id) = trait_id.as_local() {
+                    let trait_compartments = Self::get_explicit_compartments(tcx, local_trait_id);
+                    if debug {
+                        eprintln!("DEBUG: get_impl_method_compartments: trait {:?} has explicit compartments: {:?}", trait_id, trait_compartments.tags);
+                    }
+                    if Self::has_explicit_compartments(&trait_compartments) {
+                        return trait_compartments;
+                    }
+                }
+            }
+        }
+        
         if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
             if let Some(local_impl_id) = impl_def_id.as_local() {
                 let impl_compartments = Self::get_explicit_compartments(tcx, local_impl_id);

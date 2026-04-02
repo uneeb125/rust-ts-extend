@@ -1761,6 +1761,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         args: &'tcx [hir::Expr<'tcx>],
         expected: Expectation<'tcx>,
     ) -> Ty<'tcx> {
+        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+            eprintln!("DEBUG: check_expr_method_call called for {:?}", expr);
+        }
         let rcvr_t = self.check_expr(rcvr);
         let rcvr_t = self.try_structurally_resolve_type(rcvr.span, rcvr_t);
 
@@ -1788,6 +1791,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 // Check compartments for method call
                 if let Some(def_id) = method.def_id.as_local() {
+                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                        eprintln!("DEBUG: def_id is local: {:?}", def_id);
+                    }
                     let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
                         self.tcx,
                         def_id,
