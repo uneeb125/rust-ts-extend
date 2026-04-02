@@ -1789,15 +1789,36 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
                 let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-                // Check compartments for method call
-                if let Some(def_id) = method.def_id.as_local() {
-                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                        eprintln!("DEBUG: def_id is local: {:?}", def_id);
-                    }
-                    let fn_compartments = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
-                        self.tcx,
-                        def_id,
-                    );
+                    // Check compartments for method call
+                    if let Some(def_id) = method.def_id.as_local() {
+                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                            eprintln!("DEBUG: def_id is local: {:?}", def_id);
+                        }
+                        let mut fn_compartments: CompartmentSet = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
+                            self.tcx,
+                            def_id,
+                        );
+                        
+                        // Fallback: if method compartments are empty or default, check receiver type's compartments
+                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                            eprintln!("DEBUG: fn_compartments = {:?}, checking receiver type", fn_compartments.tags);
+                        }
+                        if fn_compartments.tags.is_empty() 
+                            || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == "Default")
+                            || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == self.tcx.crate_name(def_id.to_def_id().krate).as_str()) {
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: fn_compartments is default/empty, rcvr_t kind = {:?}", rcvr_t.kind());
+                            }
+                            if let ty::Adt(adt_def, _) = rcvr_t.kind() {
+                                let type_compartments: CompartmentSet = self.tcx.compartment_set(adt_def.did()).clone();
+                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                    eprintln!("DEBUG: Receiver type {:?} has compartments: {:?}", adt_def.did(), type_compartments.tags);
+                                }
+                                if !type_compartments.tags.is_empty() && !(type_compartments.tags.len() == 1 && type_compartments.tags[0].as_str() == "Default") {
+                                    fn_compartments = type_compartments;
+                                }
+                            }
+                        }
 
                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                         eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
