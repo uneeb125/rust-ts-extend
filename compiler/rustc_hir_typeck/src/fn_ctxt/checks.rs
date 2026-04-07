@@ -234,8 +234,23 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
             hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
                 // Variable reference - look up compartments from the variable's definition
-                if let Some(res) = path.res.opt_def_id() {
-                    if let Some(local_id) = res.as_local() {
+                if let Some(def_id) = path.res.opt_def_id() {
+                    // Special handling for enum variants: get compartments from the enum type
+                    let def_kind = self.tcx.def_kind(def_id);
+                    if matches!(def_kind, DefKind::Variant) || 
+                       matches!(def_kind, DefKind::Ctor(CtorOf::Variant, _)) {
+                        let expr_ty = self.typeck_results.borrow().expr_ty(expr);
+                        if let ty::Adt(adt_def, _) = expr_ty.kind() {
+                            let enum_compartments = self.tcx.compartment_set(adt_def.did());
+                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                eprintln!("DEBUG: Path to variant/ctor {:?}, enum {:?} has compartments: {:?}", 
+                                    def_id, adt_def.did(), enum_compartments.tags);
+                            }
+                            return enum_compartments.clone();
+                        }
+                    }
+                    
+                    if let Some(local_id) = def_id.as_local() {
                         let hir_id = self.tcx.local_def_id_to_hir_id(local_id);
                         // Only look up if the HirId has the same owner (same body context)
                         let typeck_owner = self.typeck_results.borrow().hir_owner;
@@ -312,10 +327,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
                     } else {
                         // Non-local def_id - use crate name as default when feature is active
-                        let def_compartments = self.tcx.compartment_set(res);
+                        let def_compartments = self.tcx.compartment_set(def_id);
                         if def_compartments.tags.is_empty() || def_compartments.tags.len() == 1 && def_compartments.tags[0].as_str() == "Default" {
                             if self.tcx.features().compartments() {
-                                let crate_name = self.tcx.crate_name(res.krate);
+                                let crate_name = self.tcx.crate_name(def_id.krate);
                                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                                 return CompartmentSet { tags: vec![crate_compartment] };
                             }
