@@ -60,8 +60,8 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
             }
             
             // For #[automatically_derived] code (e.g., derive macros), inherit trusted compartments from self type
-            if tcx.is_automatically_derived(def_id) {
-                if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+            if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+                if tcx.is_automatically_derived(impl_def_id) {
                     if let Some(local_impl_id) = impl_def_id.as_local() {
                         let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
                         if let rustc_hir::Node::Item(rustc_hir::Item {
