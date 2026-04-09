@@ -55,6 +55,15 @@ impl CompartmentSet {
         self.tags == other.tags
     }
 
+    pub fn untrusted_target_compartments(&self, target: &Self, trusted: &Self) -> Vec<Symbol> {
+        target
+            .tags
+            .iter()
+            .filter(|t| !trusted.tags.contains(t))
+            .cloned()
+            .collect()
+    }
+
     /// Check if `self` (current scope) can access `target` compartments.
     /// If any tag in `target` is in `trusted`, skip the check for that tag.
     /// This enables "trusted compartments" - compartments that bypass access checks.
@@ -63,13 +72,15 @@ impl CompartmentSet {
             return true;
         }
         // If any target tag is trusted, we skip the containment check for that tag
-        let untrusted_target_tags: Vec<_> = target
-            .tags
-            .iter()
-            .filter(|t| !trusted.tags.contains(t))
-            .cloned()
-            .collect();
-        
+        let untrusted_target_tags  = self.untrusted_target_compartments(target, trusted);
+
+        let untrusted_target_set= &Self {tags: untrusted_target_tags.clone()};
+
+        if self.matches(untrusted_target_set){
+            return true
+        }
+
+
         // All non-trusted target tags must be in current scope
         untrusted_target_tags.iter().all(|t| self.tags.contains(t))
     }

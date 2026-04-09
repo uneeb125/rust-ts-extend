@@ -637,34 +637,35 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 if !skip_compartment_check {
                     for arg in arg_exprs {
                         let arg_ty = self.typeck_results.borrow().expr_ty(arg);
-                        
+
                         // First, check the expression's compartment (for the actual value being passed)
                         let arg_compartments = self.find_compartments_in_expr(arg);
-                        
+
                         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                             eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
                         }
-                        
+
                         // Check if argument's compartment is allowed by function's compartments (with trusted bypass)
                         if !arg_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&arg_compartments, &trusted) {
                             self.tcx.dcx().span_err(
                                 arg.span,
                                 format!(
-                                    "argument has compartments ({}) that are not allowed by function's compartments ({})",
+                                    "argument has compartments ({}) that are not allowed by function's compartments ({}), trusted_compartments ({})",
                                     arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                                 ),
                             );
                         }
-                        
+
                         // Also check the type's declared compartment (for ADT types) - only if expression check found nothing
                         if arg_compartments.tags.is_empty() {
                             if let ty::Adt(adt_def, _) = arg_ty.kind() {
                                 let type_def_id = adt_def.did();
                                 let type_compartments = self.tcx.compartment_set(type_def_id);
-                                
+
                                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                    eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
+                                    eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
                                         self.tcx.def_path_str(type_def_id), type_compartments.tags);
                                 }
 
@@ -759,7 +760,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             } else {
                 false
             };
-            
+
             if !fn_compartments.tags.is_empty() && !skip_recording {
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     call_expr.hir_id,
@@ -1079,7 +1080,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Record closure's compartments on the call expression
         // The return value inherits the closure's captured compartments
         let mut closure_compartment_found = None;
-        
+
         // Check if callee is a Path expression - resolve to the variable's definition
         if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &callee_expr.kind {
             // The path.res can be Local (for local variables) or Def (for functions)
@@ -1090,18 +1091,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 _ => None,
             };
-            
+
             if let Some(target_hir_id) = target_hir_id {
                 // Look up compartments from the variable's definition
                 closure_compartment_found = self.typeck_results.borrow().node_compartment(target_hir_id).cloned();
             }
         }
-        
+
         // Fall back to checking callee_expr directly
         if closure_compartment_found.is_none() {
             closure_compartment_found = self.typeck_results.borrow().node_compartment(callee_expr.hir_id).cloned();
         }
-        
+
         if let Some(closure_compartments) = closure_compartment_found {
             if !closure_compartments.tags.is_empty() {
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
