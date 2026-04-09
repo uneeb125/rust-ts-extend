@@ -2193,77 +2193,30 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         };
 
-        // Prohibit struct expressions when non-exhaustive flag is set.
         let adt = adt_ty.ty_adt_def().expect("`check_struct_path` returned non-ADT type");
-
-        // Check compartment access for struct definition
         let struct_def_id = adt.did();
         let struct_compartments = self.tcx.compartment_set(struct_def_id);
-        let current_compartments = self.root_ctxt.get_current_compartments();
 
-        // If struct only has Default compartment, use current function's compartments
-        // Only apply crate-name default if compartments feature is active
+        // Check if struct has truly explicit compartments (not Default or crate-name defaults)
         let use_compartments = self.tcx.features().compartments();
-        let effective_struct_compartments = if struct_compartments.tags.len() == 1 &&
-            struct_compartments.tags[0].as_str() == "Default" {
-            if use_compartments {
-                // Use crate name as default when feature is active
-                let crate_name = self.tcx.crate_name(struct_def_id.krate);
-                let crate_compartment = Symbol::intern(&crate_name.as_str());
-                CompartmentSet { tags: vec![crate_compartment]}
-            } else {
-                current_compartments.clone()
-            }
-        } else {
+        let crate_name = self.tcx.crate_name(struct_def_id.krate);
+        let crate_name_str = crate_name.as_str();
+        let is_explicit = |t: &Symbol| {
+            let s = t.as_str();
+            s != "Default" && s != crate_name_str
+        };
+        let has_explicit_compartments = use_compartments &&
+            !struct_compartments.tags.is_empty() &&
+            struct_compartments.tags.iter().all(is_explicit);
+
+        // If struct has explicit compartments, use those; otherwise use current context's
+        let compartments_to_record = if has_explicit_compartments {
             struct_compartments.clone()
+        } else {
+            let current_compartments = self.root_ctxt.get_current_compartments();
+            current_compartments.clone()
         };
 
-        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-            eprintln!("DEBUG: check_expr_struct: struct {:?} has compartments: {:?}",
-                self.tcx.def_path_str(struct_def_id), struct_compartments.tags);
-            eprintln!("DEBUG: check_expr_struct: effective compartments: {:?}", effective_struct_compartments.tags);
-        }
-
-        // Get trusted compartments for the current context
-        let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
-        let trusted = self.tcx.trusted_compartments(current_def_id).clone();
-
-        if !effective_struct_compartments.tags.is_empty() && !effective_struct_compartments.tags.iter().all(|t: &Symbol| t.as_str() == "Default") {
-            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: check_expr_struct: current compartments: {:?}", current_compartments.tags);
-            }
-
-            if !current_compartments.can_access_with_trusted(&effective_struct_compartments, &trusted) {
-                self.tcx.dcx().span_err(
-                    expr.span,
-                    format!(
-                        "cannot create instance of struct with compartments ({}) - not available in current scope (available: {})",
-                        effective_struct_compartments.tags.iter().map(|s: &Symbol| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                        if current_compartments.tags.is_empty() {
-                            "none".to_string()
-                        } else {
-                            current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                        }
-                    ),
-                );
-            }
-        }
-
-        // Record compartments for this expression
-        // For types with Default-only compartments, use crate name as default when feature is active
-        let compartments_to_record = if struct_compartments.tags.len() == 1 &&
-            struct_compartments.tags[0].as_str() == "Default" {
-            if use_compartments {
-                // Use crate name as default when feature is active
-                let crate_name = self.tcx.crate_name(struct_def_id.krate);
-                let crate_compartment = Symbol::intern(&crate_name.as_str());
-                CompartmentSet { tags: vec![crate_compartment] }
-            } else {
-                current_compartments.clone()
-            }
-        } else {
-            struct_compartments.clone()
-        };
         self.typeck_results.borrow_mut()
             .node_compartments_mut()
             .insert(expr.hir_id, compartments_to_record);
