@@ -606,50 +606,79 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
                 }
 
-                // Check if argument types' compartments are allowed by function's declared compartments
-                for arg in arg_exprs {
-                    let arg_ty = self.typeck_results.borrow().expr_ty(arg);
-                    
-                    // First, check the expression's compartment (for the actual value being passed)
-                    let arg_compartments = self.find_compartments_in_expr(arg);
-                    
-                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                        eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
+                // For enum variant constructors, check if the enum has explicit compartments
+                // If enum only has default compartments, skip compartment checking
+                let is_variant_constructor = matches!(
+                    self.tcx.def_kind(def_id),
+                    def::DefKind::Ctor(def::CtorOf::Variant, ..)
+                );
+                let skip_compartment_check = if is_variant_constructor {
+                    let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+                    let parent_item = self.tcx.hir_get_parent_item(hir_id);
+                    let parent_def_kind = self.tcx.def_kind(parent_item.to_def_id());
+                    if matches!(parent_def_kind, def::DefKind::Enum) {
+                        let enum_compartments = self.tcx.compartment_set(parent_item.to_def_id());
+                        let crate_name = self.tcx.crate_name(def_id.krate);
+                        let is_explicit = !enum_compartments.tags.is_empty() &&
+                            !enum_compartments.tags.iter().all(|t| {
+                                let s = t.as_str();
+                                s == "Default" || s == crate_name.as_str()
+                            });
+                        !is_explicit
+                    } else {
+                        false // Struct variants - not an enum
                     }
-                    
-                    // Check if argument's compartment is allowed by function's compartments (with trusted bypass)
-                    if !arg_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&arg_compartments, &trusted) {
-                        self.tcx.dcx().span_err(
-                            arg.span,
-                            format!(
-                                "argument has compartments ({}) that are not allowed by function's compartments ({})",
-                                arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                            ),
-                        );
-                    }
-                    
-                    // Also check the type's declared compartment (for ADT types) - only if expression check found nothing
-                    if arg_compartments.tags.is_empty() {
-                        if let ty::Adt(adt_def, _) = arg_ty.kind() {
-                            let type_def_id = adt_def.did();
-                            let type_compartments = self.tcx.compartment_set(type_def_id);
-                            
-                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
-                                    self.tcx.def_path_str(type_def_id), type_compartments.tags);
-                            }
+                } else {
+                    false
+                };
 
-                            // Check if the argument's type compartments are allowed by function's compartments (with trusted bypass)
-                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
-                                self.tcx.dcx().span_err(
-                                    arg.span,
-                                    format!(
-                                        "argument type has compartments ({}) that are not allowed by function's compartments ({})",
-                                        type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                        fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                    ),
-                                );
+                // Check if argument types' compartments are allowed by function's declared compartments
+                // Skip for variant constructors when enum only has default compartments
+                if !skip_compartment_check {
+                    for arg in arg_exprs {
+                        let arg_ty = self.typeck_results.borrow().expr_ty(arg);
+                        
+                        // First, check the expression's compartment (for the actual value being passed)
+                        let arg_compartments = self.find_compartments_in_expr(arg);
+                        
+                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                            eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
+                        }
+                        
+                        // Check if argument's compartment is allowed by function's compartments (with trusted bypass)
+                        if !arg_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&arg_compartments, &trusted) {
+                            self.tcx.dcx().span_err(
+                                arg.span,
+                                format!(
+                                    "argument has compartments ({}) that are not allowed by function's compartments ({})",
+                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                ),
+                            );
+                        }
+                        
+                        // Also check the type's declared compartment (for ADT types) - only if expression check found nothing
+                        if arg_compartments.tags.is_empty() {
+                            if let ty::Adt(adt_def, _) = arg_ty.kind() {
+                                let type_def_id = adt_def.did();
+                                let type_compartments = self.tcx.compartment_set(type_def_id);
+                                
+                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                                    eprintln!("DEBUG: Argument type {:?} has compartments: {:?}", 
+                                        self.tcx.def_path_str(type_def_id), type_compartments.tags);
+                                }
+
+                                // Check if the argument's type compartments are allowed by function's compartments (with trusted bypass)
+                                if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                                    self.tcx.dcx().span_err(
+                                        arg.span,
+                                        format!(
+                                            "argument type has compartments ({}) that are not allowed by function's compartments ({})",
+                                            type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                        ),
+                                    );
+                                }
                             }
                         }
                     }
@@ -703,8 +732,35 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     compartments.clone()
                 }
             };
+
+            // For variant constructors with only default compartments, don't record
+            // - let the context determine compartments
+            let is_variant_constructor = matches!(
+                self.tcx.def_kind(def_id),
+                def::DefKind::Ctor(def::CtorOf::Variant, ..)
+            );
+            let skip_recording = if is_variant_constructor && def_id.is_local() {
+                let local_def_id = def_id.expect_local();
+                let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+                let parent_item = self.tcx.hir_get_parent_item(hir_id);
+                let parent_def_kind = self.tcx.def_kind(parent_item.to_def_id());
+                if matches!(parent_def_kind, def::DefKind::Enum) {
+                    let enum_compartments = self.tcx.compartment_set(parent_item.to_def_id());
+                    let crate_name = self.tcx.crate_name(def_id.krate);
+                    let is_explicit = !enum_compartments.tags.is_empty() &&
+                        !enum_compartments.tags.iter().all(|t| {
+                            let s = t.as_str();
+                            s == "Default" || s == crate_name.as_str()
+                        });
+                    !is_explicit
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
             
-            if !fn_compartments.tags.is_empty() {
+            if !fn_compartments.tags.is_empty() && !skip_recording {
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     call_expr.hir_id,
                     fn_compartments,

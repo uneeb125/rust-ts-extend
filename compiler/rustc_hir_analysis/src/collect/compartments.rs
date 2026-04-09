@@ -20,6 +20,32 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
         println!("DEBUG: Collecting trusted compartments for {:?}", tcx.def_path_str(def_id));
     }
 
+    // First check if this is an associated item in an impl block - check impl's trusted_compartments
+    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+        if let Some(local_impl_id) = impl_def_id.as_local() {
+            let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+            let impl_owner_id = impl_hir_id.owner;
+            let impl_attrs = tcx.hir_attrs(impl_owner_id.into());
+            
+            for attr in impl_attrs {
+                if let rustc_hir::Attribute::Parsed(
+                    rustc_hir::attrs::AttributeKind::TrustedCompartments(items, _span),
+                ) = attr
+                {
+                    let trusted_tags: Vec<_> = items.iter().map(|(symbol, _)| *symbol).collect();
+                    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                        println!(
+                            "DEBUG: Found trusted compartments on impl block {:?}: {:?}",
+                            tcx.def_path_str(impl_def_id),
+                            trusted_tags
+                        );
+                    }
+                    return CompartmentSet::from_iter(trusted_tags);
+                }
+            }
+        }
+    }
+
     // First check the starting node itself (convert HirId to OwnerId for hir_attrs)
     let start_owner_id = hir_id.owner;
     let all_attrs = tcx.hir_attrs(start_owner_id.into());
