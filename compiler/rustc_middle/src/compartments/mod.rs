@@ -59,29 +59,25 @@ impl CompartmentSet {
         target
             .tags
             .iter()
-            .filter(|t| !trusted.tags.contains(t))
+            .filter(|t| !trusted.tags.contains(t) && !self.tags.contains(t))
             .cloned()
             .collect()
     }
 
     /// Check if `self` (current scope) can access `target` compartments.
-    /// If any tag in `target` is in `trusted`, skip the check for that tag.
-    /// This enables "trusted compartments" - compartments that bypass access checks.
+    /// Access is allowed if all target compartments are either:
+    /// 1. In `self` (current scope), OR
+    /// 2. In `trusted` set (bypasses access check)
+    /// 
+    /// Access is DENIED only if target has compartments that are in NEITHER `self` NOR `trusted`.
     pub fn can_access_with_trusted(&self, target: &Self, trusted: &Self) -> bool {
         if self.is_sudo() || target.is_sudo() {
             return true;
         }
-        // If any target tag is trusted, we skip the containment check for that tag
-        let untrusted_target_tags  = self.untrusted_target_compartments(target, trusted);
-
-        let untrusted_target_set= &Self {tags: untrusted_target_tags.clone()};
-
-        if self.matches(untrusted_target_set){
-            return true
-        }
-
-
-        // All non-trusted target tags must be in current scope
-        untrusted_target_tags.iter().all(|t| self.tags.contains(t))
+        // Get tags in target that are neither in self nor in trusted
+        let untrusted_target_tags = self.untrusted_target_compartments(target, trusted);
+        
+        // Access allowed only if there are no untrusted compartments
+        untrusted_target_tags.is_empty()
     }
 }

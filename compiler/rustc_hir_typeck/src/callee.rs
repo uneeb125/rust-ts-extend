@@ -632,56 +632,28 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     false
                 };
 
-                // Check if argument types' compartments are allowed by function's declared compartments
-                // Skip for variant constructors when enum only has default compartments
+                // Check if the callee's compartments are accessible from current context
+                // If the callee's compartments are trusted, we can call it regardless of argument compartments
                 if !skip_compartment_check {
-                    for arg in arg_exprs {
-                        let arg_ty = self.typeck_results.borrow().expr_ty(arg);
-
-                        // First, check the expression's compartment (for the actual value being passed)
-                        let arg_compartments = self.find_compartments_in_expr(arg);
-
-                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                            eprintln!("DEBUG: Argument expr has compartments: {:?}", arg_compartments.tags);
-                        }
-
-                        // Check if argument's compartment is allowed by function's compartments (with trusted bypass)
-                        if !arg_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&arg_compartments, &trusted) {
-                            self.tcx.dcx().span_err(
-                                arg.span,
-                                format!(
-                                    "argument has compartments ({}) that are not allowed by function's compartments ({}), trusted_compartments ({})",
-                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                    trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                ),
-                            );
-                        }
-
-                        // Also check the type's declared compartment (for ADT types) - only if expression check found nothing
-                        if arg_compartments.tags.is_empty() {
-                            if let ty::Adt(adt_def, _) = arg_ty.kind() {
-                                let type_def_id = adt_def.did();
-                                let type_compartments = self.tcx.compartment_set(type_def_id);
-
-                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                    eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
-                                        self.tcx.def_path_str(type_def_id), type_compartments.tags);
-                                }
-
-                                // Check if the argument's type compartments are allowed by function's compartments (with trusted bypass)
-                                if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
-                                    self.tcx.dcx().span_err(
-                                        arg.span,
-                                        format!(
-                                            "argument type has compartments ({}) that are not allowed by function's compartments ({})",
-                                            type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                        ),
-                                    );
-                                }
-                            }
-                        }
+                    let current_compartments = self.root_ctxt.get_current_compartments();
+                    
+                    // Check if we are inside unsafe block - skip compartment check if so
+                    let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
+                    
+                    if !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                        self.tcx.dcx().span_err(
+                            call_expr.span,
+                            format!(
+                                "cannot call function with compartments ({}) - not available in current scope (available: {}, trusted: {})",
+                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                if current_compartments.tags.is_empty() {
+                                    "none".to_string()
+                                } else {
+                                    current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                },
+                                trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            ),
+                        );
                     }
                 }
             }
