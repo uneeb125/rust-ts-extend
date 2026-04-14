@@ -79,10 +79,37 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
     loop {
         let owner_id = tcx.hir_get_parent_item(hir_id);
 
-        // Check if we've reached crate root (shouldn't happen after first iteration)
+        // Check if we've reached crate root
         if owner_id == rustc_hir::CRATE_OWNER_ID {
+            // Check crate-level attributes for #[trusted_compartments(...)]
+            // Crate root attributes are stored with CRATE_OWNER_ID
+            let crate_attrs = tcx.hir_attrs(rustc_hir::CRATE_OWNER_ID.into());
+            
             if std::env::var("MY_DEBUG_COLLECT").is_ok() {
-                println!("DEBUG: Reached crate root, no trusted compartments found");
+                println!(
+                    "DEBUG: Checking crate-level attributes for trusted compartments ({} attrs)",
+                    crate_attrs.len()
+                );
+            }
+            
+            for attr in crate_attrs {
+                if let rustc_hir::Attribute::Parsed(
+                    rustc_hir::attrs::AttributeKind::TrustedCompartments(items, _span),
+                ) = attr
+                {
+                    let trusted_tags: Vec<_> = items.iter().map(|(symbol, _)| *symbol).collect();
+                    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                        println!(
+                            "DEBUG: Found trusted compartments at crate level: {:?}",
+                            trusted_tags
+                        );
+                    }
+                    return CompartmentSet::from_iter(trusted_tags);
+                }
+            }
+            
+            if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                println!("DEBUG: No trusted compartments found at crate level");
             }
             
             // For #[automatically_derived] code (e.g., derive macros), inherit trusted compartments from self type

@@ -1549,9 +1549,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(
-                    "cannot assign value with compartments ({}) - not available in current scope (available: {})",
+                    "cannot assign value with compartments ({}) - not available in current scope (available: ({}), trusted: ({}) )",
                     rhs_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                    current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                    current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                    trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                 ),
             );
         }
@@ -1798,12 +1799,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             self.tcx,
                             def_id,
                         );
-                        
+
                         // Fallback: if method compartments are empty or default, check receiver type's compartments
                         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                             eprintln!("DEBUG: fn_compartments = {:?}, checking receiver type", fn_compartments.tags);
                         }
-                        if fn_compartments.tags.is_empty() 
+                        if fn_compartments.tags.is_empty()
                             || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == "Default")
                             || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == self.tcx.crate_name(def_id.to_def_id().krate).as_str()) {
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
