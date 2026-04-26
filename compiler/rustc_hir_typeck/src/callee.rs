@@ -637,10 +637,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Unsafe bypasses this check
                 if !skip_compartment_check {
                     let current_compartments = self.root_ctxt.get_current_compartments();
-                    
+
                     // Check if we are inside unsafe block - skip callee compartment check if so
                     let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
-                    
+
                     if !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
                         self.tcx.dcx().span_err(
                             call_expr.span,
@@ -661,21 +661,22 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // This check is NOT bypassed by unsafe - arguments must always be compatible
                     for arg in arg_exprs {
                         let arg_compartments = self.find_compartments_in_expr(arg);
-                        
+
                         if !arg_compartments.tags.is_empty() {
                             // Check if argument's compartments are a subset of function's compartments (with trusted bypass)
                             // An argument can be passed if all its compartments are in fn_compartments or in trusted
                             let untrusted = arg_compartments.tags.iter()
                                 .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                                 .collect::<Vec<_>>();
-                            
+
                             if !untrusted.is_empty() {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(
-                                        "argument has compartments ({}) that are not allowed by function's compartments ({})",
-                                        untrusted.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                        "argument has compartments ({}) that are not allowed by function's compartments ({}), ({}) compartment missing",
+                                        arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                         fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                        arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                     ),
                                 );
                             }
