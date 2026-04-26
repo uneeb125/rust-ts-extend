@@ -663,20 +663,35 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         let arg_compartments = self.find_compartments_in_expr(arg);
 
                         if !arg_compartments.tags.is_empty() {
-                            // Check if argument's compartments are a subset of function's compartments (with trusted bypass)
-                            // An argument can be passed if all its compartments are in fn_compartments or in trusted
+                            // Compute "untrusted" (violations) - keeping your original logic for the 'if' check
                             let untrusted = arg_compartments.tags.iter()
                                 .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                                 .collect::<Vec<_>>();
 
                             if !untrusted.is_empty() {
+                                // 1. Difference: fn_compartments - arg_compartments
+                                let fn_minus_arg = fn_compartments.tags.iter()
+                                    .filter(|t| !arg_compartments.tags.contains(t))
+                                    .map(|s| s.to_ident_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+
+                                // 2. Difference: arg_compartments - fn_compartments
+                                let arg_minus_fn = arg_compartments.tags.iter()
+                                    .filter(|t| !fn_compartments.tags.contains(t))
+                                    .map(|s| s.to_ident_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(
-                                        "argument has compartments ({}) that are not allowed by function's compartments ({}), ({}) compartment missing",
+                                        "argument has compartments ({}) that are not allowed by function's compartments ({}); \
+                                        (fn - arg): [{}], (arg - fn): [{}]",
                                         arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                         fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                        arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                        fn_minus_arg,
+                                        arg_minus_fn,
                                     ),
                                 );
                             }
