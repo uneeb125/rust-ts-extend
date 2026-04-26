@@ -1821,6 +1821,49 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             }
                         }
 
+                    // Check receiver's compartments against method's compartments
+                    // For Path expressions referring to locals, use the local's hir_id for compartment lookup
+                    let rcvr_compartment_hir_id = match rcvr.kind {
+                        hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                            if let hir::def::Res::Local(var_hir_id) = path.res {
+                                var_hir_id
+                            } else {
+                                rcvr.hir_id
+                            }
+                        }
+                        _ => rcvr.hir_id,
+                    };
+
+                    let rcvr_compartments = self.typeck_results.borrow()
+                        .node_compartment(rcvr_compartment_hir_id)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            if let ty::Adt(adt_def, _) = rcvr_t.kind() {
+                                self.tcx.compartment_set(adt_def.did()).clone()
+                            } else {
+                                CompartmentSet::empty()
+                            }
+                        });
+
+                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                        eprintln!("DEBUG: Receiver expr {:?} (resolved to {:?}) has compartments: {:?}",
+                            rcvr.hir_id, rcvr_compartment_hir_id, rcvr_compartments.tags);
+                    }
+
+                    // Check if receiver's compartments are compatible with method's compartments
+                    if !rcvr_compartments.tags.is_empty()
+                        && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
+                    {
+                        self.tcx.dcx().span_err(
+                            rcvr.span,
+                            format!(
+                                "receiver has compartments ({}) that are not allowed by method's compartments ({})",
+                                rcvr_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            ),
+                        );
+                    }
+
                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                         eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
                     }
