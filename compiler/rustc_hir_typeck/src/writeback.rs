@@ -682,6 +682,11 @@ impl<'cx, 'tcx> WritebackCx<'cx, 'tcx> {
             assert!(!args.has_infer() && !args.has_placeholders());
             self.typeck_results.node_args_mut().insert(hir_id, args);
         }
+
+        // Export compartment information
+        if let Some(compartments) = self.fcx.typeck_results.borrow().node_compartment(hir_id) {
+            self.typeck_results.node_compartments_mut().insert(hir_id, compartments.clone());
+        }
     }
 
     #[instrument(skip(self, span), level = "debug")]

@@ -166,7 +166,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                         borrow_kind: deref.mutbl.to_borrow_kind(),
                         arg: arg_id,
                     },
-                    compartment,
+                    compartment: compartment.clone(),
                 };
 
                 let expr = Box::new([self.thir.exprs.push(expr)]);
@@ -212,7 +212,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     ty: pin_ty,
                     span,
                     kind: pointer_target,
-                    compartment: CompartmentSet::empty(),
+                    compartment: compartment.clone(),
                 };
                 let arg = self.thir.exprs.push(arg);
 
@@ -223,7 +223,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     ty: ptr_target_ty,
                     span,
                     kind: expr,
-                    compartment: CompartmentSet::empty(),
+                    compartment: compartment.clone(),
                 });
 
                 // expr = &mut target
@@ -263,7 +263,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
             ty: adjustment.target,
             span,
             kind,
-            compartment: CompartmentSet::empty(),
+            compartment,
         }
     }
 
@@ -1157,11 +1157,16 @@ impl<'tcx> ThirBuildCx<'tcx> {
                     .node_compartment(expr.hir_id)
                     .cloned()
                     .unwrap_or_else(CompartmentSet::empty);
-                if std::env::var("MY_DEBUG_THIR").is_ok() && !compartment.tags.is_empty() {
-                    println!(
-                        "DEBUG: THIR Expr {:?} gets compartments {:?}",
-                        expr.hir_id, compartment.tags
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!(
+                        "DEBUG THIR: hir_id={:?} expr_kind={:?} compartment={:?}",
+                        expr.hir_id,
+                        expr.kind,
+                        compartment
                     );
+                    for (k, v) in self.typeck_results.node_compartments().items_in_stable_order() {
+                        eprintln!("  node_compartment[{:?}] = {:?}", k, v);
+                    }
                 }
                 compartment
             },
