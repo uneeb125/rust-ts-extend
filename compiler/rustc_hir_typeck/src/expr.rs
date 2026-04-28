@@ -1887,7 +1887,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(
-                                        "argument type has compartments ({}) that are not allowed by method's compartments ({})",
+                                        "arg type has ({}) not allowed by method's comps ({})",
                                         type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                         fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                                     ),

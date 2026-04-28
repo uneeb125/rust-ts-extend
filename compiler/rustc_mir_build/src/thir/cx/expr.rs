@@ -1152,9 +1152,21 @@ impl<'tcx> ThirBuildCx<'tcx> {
             ty: expr_ty,
             span: expr.span,
             compartment: {
+                // For local variable references, use the variable's definition hir_id
+                // for compartment lookup instead of the reference expression's hir_id
+                let compartment_hir_id = match expr.kind {
+                    hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                        if let hir::def::Res::Local(var_hir_id) = path.res {
+                            var_hir_id
+                        } else {
+                            expr.hir_id
+                        }
+                    }
+                    _ => expr.hir_id,
+                };
                 let compartment = self
                     .typeck_results
-                    .node_compartment(expr.hir_id)
+                    .node_compartment(compartment_hir_id)
                     .cloned()
                     .unwrap_or_else(CompartmentSet::empty);
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
