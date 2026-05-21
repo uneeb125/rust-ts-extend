@@ -170,7 +170,7 @@ fn typeck_with_inspect<'tcx>(
 
     // For const items inside functions, get compartments from the enclosing function
     let def_kind = tcx.def_kind(def_id.to_def_id());
-    let compartments = if def_kind == DefKind::Const {
+    let mut compartments = if def_kind == DefKind::Const {
         let parent_owner_id = tcx.hir_get_parent_item(id);
         let parent_def_id = parent_owner_id.to_def_id();
         if parent_def_id != def_id.to_def_id() {
@@ -312,6 +312,17 @@ fn typeck_with_inspect<'tcx>(
             _ => CompartmentSet::default(),
         }
     };
+
+    if compartments.tags.is_empty()
+        || compartments.tags.iter().all(|t| t.as_str() == "Default")
+    {
+        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(
+            tcx,
+            def_id.to_def_id(),
+        ) {
+            compartments = partition_comps;
+        }
+    }
 
     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
         eprintln!("[DEBUG typeck] def_id={:?}, compartments={:?}", def_id, compartments);

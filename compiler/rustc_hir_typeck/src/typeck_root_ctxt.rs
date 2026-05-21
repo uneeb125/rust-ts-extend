@@ -2,13 +2,14 @@ use std::cell::{Cell, RefCell};
 use std::ops::Deref;
 
 use rustc_data_structures::unord::{UnordMap, UnordSet};
-use rustc_hir::def_id::LocalDefId;
+use rustc_hir::def_id::{DefId, LocalDefId};
 use rustc_hir::{self as hir, def::DefKind, def::Res, HirId, HirIdMap, LangItem};
 use rustc_hir::attrs::AttributeKind;
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
-use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt, TypingMode};
 use rustc_middle::compartments::CompartmentSet;
+use rustc_session::config::CompartmentMissing;
 use rustc_span::{Span, Symbol};
 use rustc_span::def_id::LocalDefIdMap;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
@@ -208,6 +209,53 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
         self.current_compartments.clone()
     }
 
+    pub(super) fn lookup_partition(
+        tcx: TyCtxt<'_>,
+        def_id: DefId,
+    ) -> Option<CompartmentSet> {
+        let Some(ref partition_map) = tcx.sess.compartment_partition_map else {
+            return None;
+        };
+        let def_kind = tcx.def_kind(def_id);
+        if def_kind != DefKind::Fn && def_kind != DefKind::AssocFn {
+            return None;
+        }
+        if tcx.generics_of(def_id).requires_monomorphization(tcx) {
+            return None;
+        }
+        let instance = Instance::mono(tcx, def_id);
+        let symbol_name = tcx.symbol_name(instance).name;
+        match partition_map.get(symbol_name) {
+            Some(entry) => Some(CompartmentSet::from_iter(
+                entry.compartments.iter().cloned(),
+            )),
+            None => {
+                let missing = tcx.sess.opts.unstable_opts.compartment_missing;
+                match missing {
+                    CompartmentMissing::Skip => {}
+                    CompartmentMissing::Error => {
+                        tcx.dcx().span_err(
+                            tcx.def_span(def_id),
+                            format!(
+                                "function `{symbol_name}` not found in compartment partition file"
+                            ),
+                        );
+                    }
+                    CompartmentMissing::Warn => {
+                        tcx.dcx().span_warn(
+                            tcx.def_span(def_id),
+                            format!(
+                                "function `{symbol_name}` not found in compartment partition file, \
+                                 using default compartments"
+                            ),
+                        );
+                    }
+                }
+                None
+            }
+        }
+    }
+
     pub(super) fn get_function_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
         let hir_id = tcx.local_def_id_to_hir_id(def_id);
         let attrs = tcx.hir_attrs(hir_id);
@@ -221,6 +269,9 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                 }
             })
             .unwrap_or_else(|| {
+                if let Some(partition_comps) = Self::lookup_partition(tcx, def_id.to_def_id()) {
+                    return partition_comps;
+                }
                 // Use crate name as default when feature is active
                 if tcx.features().compartments() {
                     let crate_name = tcx.crate_name(def_id.to_def_id().krate);
@@ -321,7 +372,13 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
             }
         }
         
-        // 4. Fall back to crate name default
+        // 4. Fall back to partition file or crate name default
+        if debug {
+            eprintln!("DEBUG: get_impl_method_compartments: checking partition");
+        }
+        if let Some(partition_comps) = Self::lookup_partition(tcx, def_id) {
+            return partition_comps;
+        }
         if debug {
             eprintln!("DEBUG: get_impl_method_compartments: using crate name default");
         }
