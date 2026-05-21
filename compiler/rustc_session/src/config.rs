@@ -15,7 +15,7 @@ use std::sync::LazyLock;
 use std::{cmp, fmt, fs, iter};
 
 use externs::{ExternOpt, split_extern_opt};
-use rustc_data_structures::fx::{FxHashSet, FxIndexMap};
+use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
 use rustc_data_structures::stable_hasher::{StableHasher, StableOrd, ToStableHashKey};
 use rustc_errors::emitter::HumanReadableErrorType;
 use rustc_errors::{ColorConfig, DiagArgValue, DiagCtxtFlags, IntoDiagArg};
@@ -557,6 +557,83 @@ impl SwitchWithOptPath {
             SwitchWithOptPath::Disabled => false,
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum CompartmentMissing {
+    #[default]
+    Skip,
+    Error,
+    Warn,
+}
+
+#[derive(Clone, Debug)]
+pub struct PartitionEntry {
+    pub compartments: Vec<Symbol>,
+    pub trusted: Vec<Symbol>,
+}
+
+pub type PartitionMap = FxHashMap<String, PartitionEntry>;
+
+pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
+    let data = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read compartment partition file `{}`: {e}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_str(&data)
+        .map_err(|e| format!("cannot parse compartment partition file `{}`: {e}", path.display()))?;
+    let obj = value.as_object().ok_or_else(|| {
+        format!(
+            "compartment partition file `{}` must contain a JSON object",
+            path.display()
+        )
+    })?;
+    let mut map = PartitionMap::default();
+    for (name, val) in obj {
+        let entry = match val {
+            serde_json::Value::Number(n) => {
+                let id = n.as_u64().ok_or_else(|| {
+                    format!(
+                        "invalid compartment ID in partition file `{}` for `{name}`",
+                        path.display()
+                    )
+                })?;
+                PartitionEntry {
+                    compartments: vec![Symbol::intern(&id.to_string())],
+                    trusted: vec![],
+                }
+            }
+            serde_json::Value::Object(o) => {
+                let comp = o
+                    .get("compartment")
+                    .and_then(|v| v.as_u64())
+                    .ok_or_else(|| {
+                        format!(
+                            "missing or invalid `compartment` field in partition file `{}` for `{name}`",
+                            path.display()
+                        )
+                    })?;
+                let trusted: Vec<u64> = o
+                    .get("trusted")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                    .unwrap_or_default();
+                PartitionEntry {
+                    compartments: vec![Symbol::intern(&comp.to_string())],
+                    trusted: trusted
+                        .into_iter()
+                        .map(|t| Symbol::intern(&t.to_string()))
+                        .collect(),
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "invalid value type in partition file `{}` for `{name}`: expected number or object",
+                    path.display()
+                ));
+            }
+        };
+        map.insert(name.clone(), entry);
+    }
+    Ok(map)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable_Generic)]

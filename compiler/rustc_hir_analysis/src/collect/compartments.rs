@@ -1,6 +1,7 @@
 use rustc_hir::def_id::DefId;
 use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::TyCtxt;
+use rustc_session::config::CompartmentMissing;
 use rustc_span::Symbol;
 
 /// Returns the trusted compartments for a given def_id.
@@ -73,6 +74,10 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
             }
             return CompartmentSet::from_iter(trusted_tags);
         }
+    }
+
+    if let Some(trusted) = get_partition_trusted(tcx, def_id) {
+        return trusted;
     }
 
     // Walk up the HIR tree through parents
@@ -172,6 +177,71 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
     }
 }
 
+fn get_partition_trusted(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    let Some(ref partition_map) = tcx.sess.compartment_partition_map else {
+        return None;
+    };
+    let def_kind = tcx.def_kind(def_id);
+    if def_kind != rustc_hir::def::DefKind::Fn && def_kind != rustc_hir::def::DefKind::AssocFn {
+        return None;
+    }
+    if tcx.generics_of(def_id).requires_monomorphization(tcx) {
+        return None;
+    }
+    let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
+    let symbol_name = tcx.symbol_name(instance).name;
+    partition_map.get(symbol_name).and_then(|entry| {
+        if entry.trusted.is_empty() {
+            None
+        } else {
+            Some(CompartmentSet::from_iter(entry.trusted.iter().cloned()))
+        }
+    })
+}
+
+fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    let Some(ref partition_map) = tcx.sess.compartment_partition_map else {
+        return None;
+    };
+    let def_kind = tcx.def_kind(def_id);
+    if def_kind != rustc_hir::def::DefKind::Fn && def_kind != rustc_hir::def::DefKind::AssocFn {
+        return None;
+    }
+    if tcx.generics_of(def_id).requires_monomorphization(tcx) {
+        return None;
+    }
+    let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
+    let symbol_name = tcx.symbol_name(instance).name;
+    match partition_map.get(symbol_name) {
+        Some(entry) => Some(CompartmentSet::from_iter(
+            entry.compartments.iter().cloned(),
+        )),
+        None => {
+            match tcx.sess.opts.unstable_opts.compartment_missing {
+                CompartmentMissing::Skip => {}
+                CompartmentMissing::Error => {
+                    tcx.dcx().span_err(
+                        tcx.def_span(def_id),
+                        format!(
+                            "function `{symbol_name}` not found in compartment partition file"
+                        ),
+                    );
+                }
+                CompartmentMissing::Warn => {
+                    tcx.dcx().span_warn(
+                        tcx.def_span(def_id),
+                        format!(
+                            "function `{symbol_name}` not found in compartment partition file, \
+                             using default compartments"
+                        ),
+                    );
+                }
+            }
+            None
+        }
+    }
+}
+
 pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
     if !def_id.is_local() {
         return CompartmentSet::empty();
@@ -221,7 +291,14 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
             }
             return self_type_compartments;
         }
-        
+
+        if let Some(partition_compartments) = get_partition_compartments(tcx, def_id) {
+            if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                println!("DEBUG: Using partition compartments for {:?}: {:?}", def_id, partition_compartments.tags);
+            }
+            return partition_compartments;
+        }
+
         // Use crate name as default when feature is active
         if tcx.features().compartments() {
             let crate_name = tcx.crate_name(def_id.krate);

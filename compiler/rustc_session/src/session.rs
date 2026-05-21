@@ -41,8 +41,8 @@ use crate::code_stats::CodeStats;
 pub use crate::code_stats::{DataTypeKind, FieldInfo, FieldKind, SizeKind, VariantInfo};
 use crate::config::{
     self, CoverageLevel, CoverageOptions, CrateType, DebugInfo, ErrorOutputType, FunctionReturn,
-    Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, RemapPathScopeComponents,
-    SwitchWithOptPath,
+    Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, PartitionMap,
+    RemapPathScopeComponents, SwitchWithOptPath, load_partition_map,
 };
 use crate::filesearch::FileSearch;
 use crate::lint::LintId;
@@ -147,6 +147,8 @@ pub struct Session {
     /// internal features are wontfix, and they are usually the cause of the ICEs.
     /// None signifies that this is not tracked.
     pub using_internal_features: &'static AtomicBool,
+
+    pub compartment_partition_map: Option<PartitionMap>,
 
     target_filesearch: FileSearch,
     host_filesearch: FileSearch,
@@ -1085,6 +1087,14 @@ pub fn build_session(
         None
     };
 
+    let compartment_partition_map = sopts
+        .unstable_opts
+        .compartment_file
+        .as_ref()
+        .map(|path| load_partition_map(path))
+        .transpose()
+        .unwrap_or_else(|err| dcx.handle().fatal(err));
+
     let mut psess = ParseSess::with_dcx(dcx, source_map);
     psess.assume_incomplete_release = sopts.unstable_opts.assume_incomplete_release;
 
@@ -1144,6 +1154,7 @@ pub fn build_session(
         unstable_target_features: Default::default(),
         cfg_version,
         using_internal_features,
+        compartment_partition_map,
         target_filesearch,
         host_filesearch,
         invocation_temp,

@@ -795,6 +795,7 @@ mod desc {
     pub(crate) const parse_autodiff: &str = "a comma separated list of settings: `Enable`, `PrintSteps`, `PrintTA`, `PrintTAFn`, `PrintAA`, `PrintPerf`, `PrintModBefore`, `PrintModAfter`, `PrintModFinal`, `PrintPasses`, `NoPostopt`, `LooseTypes`, `Inline`, `NoTT`";
     pub(crate) const parse_offload: &str = "a comma separated list of settings: `Enable`";
     pub(crate) const parse_comma_list: &str = "a comma-separated list of strings";
+    pub(crate) const parse_compartment_missing: &str = "one of: `skip`, `error`, `warn`";
     pub(crate) const parse_opt_comma_list: &str = parse_comma_list;
     pub(crate) const parse_number: &str = "a number";
     pub(crate) const parse_opt_number: &str = parse_number;
@@ -1070,6 +1071,19 @@ pub mod parse {
             }
             None => false,
         }
+    }
+
+    pub(crate) fn parse_compartment_missing(
+        slot: &mut CompartmentMissing,
+        v: Option<&str>,
+    ) -> bool {
+        match v {
+            Some("skip") => *slot = CompartmentMissing::Skip,
+            Some("error") => *slot = CompartmentMissing::Error,
+            Some("warn") => *slot = CompartmentMissing::Warn,
+            _ => return false,
+        };
+        true
     }
 
     pub(crate) fn parse_opt_comma_list(slot: &mut Option<Vec<String>>, v: Option<&str>) -> bool {
@@ -2238,6 +2252,11 @@ options! {
         "the backend to use"),
     codegen_source_order: bool = (false, parse_bool, [UNTRACKED],
         "emit mono items in the order of spans in source files (default: no)"),
+    compartment_file: Option<PathBuf> = (None, parse_opt_pathbuf, [TRACKED],
+        "load compartment assignments from a JSON partition file (default: none)"),
+    compartment_missing: CompartmentMissing = (CompartmentMissing::Skip, parse_compartment_missing, [UNTRACKED],
+        "behavior for functions not found in the partition file: `skip` (use default), \
+         `error` (emit error), `warn` (warn and use default) (default: skip)"),
     contract_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "emit runtime checks for contract pre- and post-conditions (default: no)"),
     coverage_options: CoverageOptions = (CoverageOptions::default(), parse_coverage_options, [TRACKED],
