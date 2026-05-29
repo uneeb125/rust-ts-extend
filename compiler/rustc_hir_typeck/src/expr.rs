@@ -1563,12 +1563,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // Try to get the HirId for the LHS variable definition
             if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &lhs.kind {
                 let target_hir_id = match path.res {
-                    // Local variable - the HirId is directly in the Res::Local
                     hir::def::Res::Local(var_hir_id) => Some(var_hir_id),
-                    // DefId - convert to HirId if local
-                    hir::def::Res::Def(_, def_id) if def_id.as_local().is_some() => {
-                        Some(self.tcx.local_def_id_to_hir_id(def_id.as_local().unwrap()))
-                    }
                     _ => None,
                 };
 
