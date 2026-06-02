@@ -162,7 +162,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             
                             let callee_compartments = self.tcx.compartment_set(def_id);
                             if callee_compartments.tags.is_empty() || callee_compartments.tags.len() == 1 && callee_compartments.tags[0].as_str() == "Default" {
-                                if self.tcx.features().compartments() {
+                                if self.tcx.compartments_enabled() {
                                     let crate_name = self.tcx.crate_name(def_id.krate);
                                     let crate_compartment = Symbol::intern(&crate_name.as_str());
                                     return CompartmentSet { tags: vec![crate_compartment] };
@@ -212,7 +212,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         
                         let method_compartments = self.tcx.compartment_set(def_id);
                         if method_compartments.tags.is_empty() || method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default" {
-                            if self.tcx.features().compartments() {
+                            if self.tcx.compartments_enabled() {
                                 let crate_name = self.tcx.crate_name(def_id.krate);
                                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                                 return CompartmentSet { tags: vec![crate_compartment] };
@@ -329,7 +329,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         // Non-local def_id - use crate name as default when feature is active
                         let def_compartments = self.tcx.compartment_set(def_id);
                         if def_compartments.tags.is_empty() || def_compartments.tags.len() == 1 && def_compartments.tags[0].as_str() == "Default" {
-                            if self.tcx.features().compartments() {
+                            if self.tcx.compartments_enabled() {
                                 let crate_name = self.tcx.crate_name(def_id.krate);
                                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                                 return CompartmentSet { tags: vec![crate_compartment] };
@@ -353,7 +353,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     return left_comp;
                 }
                 // Emit error for mismatched compartments in binary operation
-                if self.tcx.features().compartments() {
+                if self.tcx.compartments_enabled() {
                     self.tcx.dcx().span_err(
                         expr.span,
                         format!(
@@ -1315,7 +1315,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if self.tcx.features().compartments() && !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
+            if self.tcx.compartments_enabled() && !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(

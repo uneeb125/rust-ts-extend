@@ -657,7 +657,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                 });
             }
             CastError::CompartmentCastOutsideUnsafe => {
-                if fcx.tcx.features().compartments() {
+                if fcx.tcx.compartments_enabled() {
                     fcx.dcx().span_err(
                         self.span,
                         "compartment casts require an `unsafe` block",
@@ -778,7 +778,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         use rustc_middle::ty::cast::CastTy::*;
         use rustc_middle::ty::cast::IntTy::*;
 
-        if fcx.tcx.features().compartments() && !self.compartments.tags.is_empty() && !self.is_unsafe {
+        if fcx.tcx.compartments_enabled() && !self.compartments.tags.is_empty() && !self.is_unsafe {
             return Err(CastError::CompartmentCastOutsideUnsafe);
         }
 
@@ -1122,7 +1122,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                     if let (Ok(src), Ok(dest)) = (src_layout, dest_layout) {
                         // Cast safety check for compartment system
                         // Only enabled when compartments feature is active
-                        if fcx.tcx.features().compartments() && src.size < dest.size {
+                        if fcx.tcx.compartments_enabled() && src.size < dest.size {
                             fcx.tcx.dcx().emit_err(errors::UnsafePointerCastError {
                                 span: self.expr_span,
                                 note: "source integer is smaller than target pointee type"

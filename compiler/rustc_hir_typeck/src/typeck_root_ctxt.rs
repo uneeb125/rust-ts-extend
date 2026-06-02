@@ -273,7 +273,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                     return partition_comps;
                 }
                 // Use crate name as default when feature is active
-                if tcx.features().compartments() {
+                if tcx.compartments_enabled() {
                     let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                     let crate_compartment = Symbol::intern(&crate_name.as_str());
                     CompartmentSet { tags: vec![crate_compartment] }
@@ -382,7 +382,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
         if debug {
             eprintln!("DEBUG: get_impl_method_compartments: using crate name default");
         }
-        if tcx.features().compartments() {
+        if tcx.compartments_enabled() {
             let crate_name = tcx.crate_name(def_id.krate);
             let crate_compartment = Symbol::intern(&crate_name.as_str());
             CompartmentSet { tags: vec![crate_compartment] }

@@ -603,7 +603,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     compartments.clone(),
                 );
                 // CompartmentCast requires unsafe
-                if self.tcx.features().compartments() && !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
+                if self.tcx.compartments_enabled() && !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
                     self.tcx.dcx().span_err(
                         expr.span,
                         "compartment cast requires an `unsafe` block",
@@ -853,7 +853,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Non-local function - use crate name as default when feature is active
                 let compartments = tcx.compartment_set(did);
                 if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
-                    if tcx.features().compartments() {
+                    if tcx.compartments_enabled() {
                         let crate_name = tcx.crate_name(did.krate);
                         let crate_compartment = Symbol::intern(&crate_name.as_str());
                         CompartmentSet { tags: vec![crate_compartment] }
@@ -1545,7 +1545,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Check if assignment is inside unsafe block
         let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
 
-        if self.tcx.features().compartments() && !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
+        if self.tcx.compartments_enabled() && !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(
@@ -1846,7 +1846,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
 
                     // Check if receiver's compartments are compatible with method's compartments
-                    if self.tcx.features().compartments() && !rcvr_compartments.tags.is_empty()
+                    if self.tcx.compartments_enabled() && !rcvr_compartments.tags.is_empty()
                         && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                     {
                         self.tcx.dcx().span_err(
@@ -1878,7 +1878,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             }
 
                             // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                            if self.tcx.features().compartments() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                            if self.tcx.compartments_enabled() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(
@@ -2237,7 +2237,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let struct_compartments = self.tcx.compartment_set(struct_def_id);
 
         // Check if struct has truly explicit compartments (not Default or crate-name defaults)
-        let use_compartments = self.tcx.features().compartments();
+        let use_compartments = self.tcx.compartments_enabled();
         let crate_name = self.tcx.crate_name(struct_def_id.krate);
         let crate_name_str = crate_name.as_str();
         let is_explicit = |t: &Symbol| {

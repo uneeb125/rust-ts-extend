@@ -641,7 +641,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Check if we are inside unsafe block - skip callee compartment check if so
                     let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
 
-                    if self.tcx.features().compartments() && !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                    if self.tcx.compartments_enabled() && !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
                         self.tcx.dcx().span_err(
                             call_expr.span,
                             format!(
@@ -668,7 +668,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                                 .collect::<Vec<_>>();
 
-                            if self.tcx.features().compartments() && !untrusted.is_empty() {
+                            if self.tcx.compartments_enabled() && !untrusted.is_empty() {
                                 // 1. Difference: fn_compartments - arg_compartments
                                 let fn_minus_arg = fn_compartments.tags.iter()
                                     .filter(|t| !arg_compartments.tags.contains(t))
@@ -736,7 +736,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Non-local function - use crate name as default when feature is active
                 let compartments = self.tcx.compartment_set(def_id);
                 if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
-                    if self.tcx.features().compartments() {
+                    if self.tcx.compartments_enabled() {
                         let crate_name = self.tcx.crate_name(def_id.krate);
                         let crate_compartment = Symbol::intern(&crate_name.as_str());
                         rustc_middle::compartments::CompartmentSet { tags: vec![crate_compartment] }

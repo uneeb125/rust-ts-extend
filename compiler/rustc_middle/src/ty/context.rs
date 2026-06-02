@@ -1952,6 +1952,13 @@ impl<'tcx> TyCtxt<'tcx> {
         self.features_query(())
     }
 
+    /// Returns true if the compartment system is active.
+    /// This is the case when either the per-crate `#![feature(compartments)]` is set
+    /// or the global `-Z compartments` flag is enabled.
+    pub fn compartments_enabled(self) -> bool {
+        self.features().compartments() || self.sess.opts.unstable_opts.compartments
+    }
+
     pub fn def_key(self, id: impl IntoQueryParam<DefId>) -> rustc_hir::definitions::DefKey {
         let id = id.into_query_param();
         // Accessing the DefKey is ok, since it is part of DefPathHash.

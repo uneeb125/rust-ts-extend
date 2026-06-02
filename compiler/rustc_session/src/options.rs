@@ -2252,6 +2252,8 @@ options! {
         "the backend to use"),
     codegen_source_order: bool = (false, parse_bool, [UNTRACKED],
         "emit mono items in the order of spans in source files (default: no)"),
+    compartments: bool = (false, parse_bool, [TRACKED],
+        "globally enable the compartment system without needing #![feature(compartments)] (default: no)"),
     compartment_file: Option<PathBuf> = (None, parse_opt_pathbuf, [TRACKED],
         "load compartment assignments from a JSON partition file (default: none)"),
     compartment_missing: CompartmentMissing = (CompartmentMissing::Skip, parse_compartment_missing, [UNTRACKED],

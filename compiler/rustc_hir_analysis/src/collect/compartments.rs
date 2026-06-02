@@ -300,7 +300,7 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
         }
 
         // Use crate name as default when feature is active
-        if tcx.features().compartments() {
+        if tcx.compartments_enabled() {
             let crate_name = tcx.crate_name(def_id.krate);
             let crate_compartment = Symbol::intern(&crate_name.as_str());
             return CompartmentSet { tags: vec![crate_compartment] };

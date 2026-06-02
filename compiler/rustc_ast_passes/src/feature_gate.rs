@@ -168,7 +168,9 @@ impl<'a> Visitor<'a> for PostExpansionVisitor<'a> {
             ..
         }) = attr_info
         {
-            gate_alt!(self, check(self.features), *feature, attr.span, *message, *notes);
+            let feature_active = check(self.features)
+                || (*feature == sym::compartments && self.sess.opts.unstable_opts.compartments);
+            gate_alt!(self, feature_active, *feature, attr.span, *message, *notes);
         }
         // Check unstable flavors of the `#[doc]` attribute.
         if attr.has_name(sym::doc) {
