@@ -641,7 +641,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Check if we are inside unsafe block - skip callee compartment check if so
                     let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
 
-                    if !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                    if self.tcx.features().compartments() && !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
                         self.tcx.dcx().span_err(
                             call_expr.span,
                             format!(
@@ -668,7 +668,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                                 .collect::<Vec<_>>();
 
-                            if !untrusted.is_empty() {
+                            if self.tcx.features().compartments() && !untrusted.is_empty() {
                                 // 1. Difference: fn_compartments - arg_compartments
                                 let fn_minus_arg = fn_compartments.tags.iter()
                                     .filter(|t| !arg_compartments.tags.contains(t))

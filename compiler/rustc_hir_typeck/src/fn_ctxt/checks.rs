@@ -353,14 +353,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     return left_comp;
                 }
                 // Emit error for mismatched compartments in binary operation
-                self.tcx.dcx().span_err(
-                    expr.span,
-                    format!(
-                        "Compartments do not match, found ({}) for lhs and ({}) for rhs",
-                        left_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                        right_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                    ),
-                );
+                if self.tcx.features().compartments() {
+                    self.tcx.dcx().span_err(
+                        expr.span,
+                        format!(
+                            "Compartments do not match, found ({}) for lhs and ({}) for rhs",
+                            left_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            right_comp.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                        ),
+                    );
+                }
                 CompartmentSet::default()
             }
             hir::ExprKind::Array(exprs) => {
@@ -1313,7 +1315,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
+            if self.tcx.features().compartments() && !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(

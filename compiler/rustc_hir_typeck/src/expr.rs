@@ -603,7 +603,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     compartments.clone(),
                 );
                 // CompartmentCast requires unsafe
-                if !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
+                if self.tcx.features().compartments() && !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
                     self.tcx.dcx().span_err(
                         expr.span,
                         "compartment cast requires an `unsafe` block",
@@ -1545,7 +1545,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Check if assignment is inside unsafe block
         let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
 
-        if !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
+        if self.tcx.features().compartments() && !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(
@@ -1846,7 +1846,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     }
 
                     // Check if receiver's compartments are compatible with method's compartments
-                    if !rcvr_compartments.tags.is_empty()
+                    if self.tcx.features().compartments() && !rcvr_compartments.tags.is_empty()
                         && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                     {
                         self.tcx.dcx().span_err(
@@ -1878,7 +1878,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             }
 
                             // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                            if !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                            if self.tcx.features().compartments() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                                 self.tcx.dcx().span_err(
                                     arg.span,
                                     format!(

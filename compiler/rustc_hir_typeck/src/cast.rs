@@ -657,10 +657,12 @@ impl<'a, 'tcx> CastCheck<'tcx> {
                 });
             }
             CastError::CompartmentCastOutsideUnsafe => {
-                fcx.dcx().span_err(
-                    self.span,
-                    "compartment casts require an `unsafe` block",
-                );
+                if fcx.tcx.features().compartments() {
+                    fcx.dcx().span_err(
+                        self.span,
+                        "compartment casts require an `unsafe` block",
+                    );
+                }
             }
         }
     }
@@ -776,7 +778,7 @@ impl<'a, 'tcx> CastCheck<'tcx> {
         use rustc_middle::ty::cast::CastTy::*;
         use rustc_middle::ty::cast::IntTy::*;
 
-        if !self.compartments.tags.is_empty() && !self.is_unsafe {
+        if fcx.tcx.features().compartments() && !self.compartments.tags.is_empty() && !self.is_unsafe {
             return Err(CastError::CompartmentCastOutsideUnsafe);
         }
 
