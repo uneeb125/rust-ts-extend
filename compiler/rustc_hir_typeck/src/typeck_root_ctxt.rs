@@ -7,7 +7,7 @@ use rustc_hir::{self as hir, def::DefKind, def::Res, HirId, HirIdMap, LangItem};
 use rustc_hir::attrs::AttributeKind;
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
-use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypeVisitableExt, TypingMode};
+use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
 use rustc_middle::compartments::CompartmentSet;
 use rustc_session::config::CompartmentMissing;
 use rustc_span::{Span, Symbol};
@@ -223,9 +223,10 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
         if tcx.generics_of(def_id).requires_monomorphization(tcx) {
             return None;
         }
-        let instance = Instance::mono(tcx, def_id);
-        let symbol_name = tcx.symbol_name(instance).name;
-        match partition_map.get(symbol_name) {
+        let crate_name = tcx.crate_name(def_id.krate);
+        let def_path = rustc_middle::ty::print::with_no_trimmed_paths!(tcx.def_path_str(def_id));
+        let full_path = format!("{}::{}", crate_name, def_path);
+        match partition_map.get(full_path.as_str()) {
             Some(entry) => Some(CompartmentSet::from_iter(
                 entry.compartments.iter().cloned(),
             )),
@@ -237,7 +238,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                         tcx.dcx().span_err(
                             tcx.def_span(def_id),
                             format!(
-                                "function `{symbol_name}` not found in compartment partition file"
+                                "function `{full_path}` not found in compartment partition file"
                             ),
                         );
                     }
@@ -245,7 +246,7 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
                         tcx.dcx().span_warn(
                             tcx.def_span(def_id),
                             format!(
-                                "function `{symbol_name}` not found in compartment partition file, \
+                                "function `{full_path}` not found in compartment partition file, \
                                  using default compartments"
                             ),
                         );

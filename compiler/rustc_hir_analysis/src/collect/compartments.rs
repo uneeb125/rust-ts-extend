@@ -188,9 +188,10 @@ fn get_partition_trusted(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSe
     if tcx.generics_of(def_id).requires_monomorphization(tcx) {
         return None;
     }
-    let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
-    let symbol_name = tcx.symbol_name(instance).name;
-    partition_map.get(symbol_name).and_then(|entry| {
+    let crate_name = tcx.crate_name(def_id.krate);
+    let def_path = rustc_middle::ty::print::with_no_trimmed_paths!(tcx.def_path_str(def_id));
+    let full_path = format!("{}::{}", crate_name, def_path);
+    partition_map.get(full_path.as_str()).and_then(|entry| {
         if entry.trusted.is_empty() {
             None
         } else {
@@ -210,9 +211,10 @@ fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
     if tcx.generics_of(def_id).requires_monomorphization(tcx) {
         return None;
     }
-    let instance = rustc_middle::ty::Instance::mono(tcx, def_id);
-    let symbol_name = tcx.symbol_name(instance).name;
-    match partition_map.get(symbol_name) {
+    let crate_name = tcx.crate_name(def_id.krate);
+    let def_path = rustc_middle::ty::print::with_no_trimmed_paths!(tcx.def_path_str(def_id));
+    let full_path = format!("{}::{}", crate_name, def_path);
+    match partition_map.get(full_path.as_str()) {
         Some(entry) => Some(CompartmentSet::from_iter(
             entry.compartments.iter().cloned(),
         )),
@@ -223,7 +225,7 @@ fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
                     tcx.dcx().span_err(
                         tcx.def_span(def_id),
                         format!(
-                            "function `{symbol_name}` not found in compartment partition file"
+                            "function `{full_path}` not found in compartment partition file"
                         ),
                     );
                 }
@@ -231,7 +233,7 @@ fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
                     tcx.dcx().span_warn(
                         tcx.def_span(def_id),
                         format!(
-                            "function `{symbol_name}` not found in compartment partition file, \
+                            "function `{full_path}` not found in compartment partition file, \
                              using default compartments"
                         ),
                     );
