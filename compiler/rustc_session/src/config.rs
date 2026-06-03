@@ -629,12 +629,7 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
                 let compartments = parse_compartment_ids(comp_val)?;
                 let trusted: Vec<Symbol> = o
                     .get("trusted")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| parse_compartment_id(v))
-                            .collect()
-                    })
+                    .map(|v| parse_compartment_ids(v).unwrap_or_default())
                     .unwrap_or_default();
                 PartitionEntry { compartments, trusted }
             }
