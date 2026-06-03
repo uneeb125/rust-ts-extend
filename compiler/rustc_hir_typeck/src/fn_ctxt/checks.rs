@@ -153,13 +153,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 if parent_def_id != def_id {
                                     let parent_compartments = self.tcx.compartment_set(parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                        eprintln!("DEBUG: Call to const {:?}, using parent {:?} compartments: {:?}", 
+                                        eprintln!("DEBUG: Call to const {:?}, using parent {:?} compartments: {:?}",
                                             def_id, parent_def_id, parent_compartments.tags);
                                     }
                                     return parent_compartments.clone();
                                 }
                             }
-                            
+
                             let callee_compartments = self.tcx.compartment_set(def_id);
                             if callee_compartments.tags.is_empty() || callee_compartments.tags.len() == 1 && callee_compartments.tags[0].as_str() == "Default" {
                                 if self.tcx.compartments_enabled() {
@@ -202,14 +202,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 if parent_def_id != def_id {
                                     let parent_compartments = self.tcx.compartment_set(parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                        eprintln!("DEBUG: Method call to const {:?}, using parent {:?} compartments: {:?}", 
+                                        eprintln!("DEBUG: Method call to const {:?}, using parent {:?} compartments: {:?}",
                                             def_id, parent_def_id, parent_compartments.tags);
                                     }
                                     return parent_compartments.clone();
                                 }
                             }
                         }
-                        
+
                         let method_compartments = self.tcx.compartment_set(def_id);
                         if method_compartments.tags.is_empty() || method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default" {
                             if self.tcx.compartments_enabled() {
@@ -237,19 +237,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 if let Some(def_id) = path.res.opt_def_id() {
                     // Special handling for enum variants: get compartments from the enum type
                     let def_kind = self.tcx.def_kind(def_id);
-                    if matches!(def_kind, DefKind::Variant) || 
+                    if matches!(def_kind, DefKind::Variant) ||
                        matches!(def_kind, DefKind::Ctor(CtorOf::Variant, _)) {
                         let expr_ty = self.typeck_results.borrow().expr_ty(expr);
                         if let ty::Adt(adt_def, _) = expr_ty.kind() {
                             let enum_compartments = self.tcx.compartment_set(adt_def.did());
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: Path to variant/ctor {:?}, enum {:?} has compartments: {:?}", 
+                                eprintln!("DEBUG: Path to variant/ctor {:?}, enum {:?} has compartments: {:?}",
                                     def_id, adt_def.did(), enum_compartments.tags);
                             }
                             return enum_compartments.clone();
                         }
                     }
-                    
+
                     if let Some(local_id) = def_id.as_local() {
                         let hir_id = self.tcx.local_def_id_to_hir_id(local_id);
                         // Only look up if the HirId has the same owner (same body context)
@@ -262,16 +262,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         } else {
                             // Different owner - could be a const item inside a function
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: Different owner case - local_id={:?}, hir_id={:?}, parent_item={:?}", 
+                                eprintln!("DEBUG: Different owner case - local_id={:?}, hir_id={:?}, parent_item={:?}",
                                     local_id, hir_id, self.tcx.hir_get_parent_item(hir_id));
                             }
-                            
+
                             // Check if this is a Const item - if so, get parent function's compartments
                             let def_kind = self.tcx.def_kind(local_id);
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: def_kind for {:?}: {:?}", local_id, def_kind);
                             }
-                            
+
                             if matches!(def_kind, DefKind::Const) {
                                 // Get compartments from parent function instead of using crate name default
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
@@ -287,24 +287,24 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     return parent_compartments.clone();
                                 }
                             }
-                            
+
                             let def_compartments = self.tcx.compartment_set(local_id.to_def_id());
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: def_compartments for {:?}: {:?}", local_id, def_compartments.tags);
                             }
-                            
+
                             // Check if def_compartments is non-Default (explicitly set)
                             fn is_explicit(cs: &rustc_middle::compartments::CompartmentSet) -> bool {
                                 !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
                             }
-                            
+
                             if is_explicit(&def_compartments) {
                                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                     eprintln!("DEBUG: Returning explicit def_compartments");
                                 }
                                 return def_compartments.clone();
                             }
-                            
+
                             // def_compartments is Default - try to get from parent function
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: def_compartments is default, trying parent");
@@ -312,7 +312,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                             let parent_def_id = parent_owner_id.to_def_id();
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: parent_def_id={:?}, local_def_id={:?}, compare={}", 
+                                eprintln!("DEBUG: parent_def_id={:?}, local_def_id={:?}, compare={}",
                                     parent_def_id, local_id, parent_def_id != local_id.to_def_id());
                             }
                             if parent_def_id != local_id.to_def_id() {
@@ -1310,7 +1310,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             // Skip check if let statement is inside unsafe block
             let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
-            
+
             // Get trusted compartments for the current context
             let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
@@ -1319,9 +1319,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(
-                        "cannot assign value with compartments ({}) - not available in current scope (available: {})",
+                        "cannot assign value with compartments ({}) - not available in current scope (available: ({}), trusted: ({}) )",
                         init_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                        current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                        current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                     ),
                 );
             }

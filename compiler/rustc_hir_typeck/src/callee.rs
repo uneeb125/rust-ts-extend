@@ -687,11 +687,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     arg.span,
                                     format!(
                                         "arg has comps ({}) not allowed by func comps ({}); \
-                                        (fn - arg): [{}], (arg - fn): [{}]",
+                                        (fn - arg): [{}], (arg - fn): [{}], trusted ({})",
                                         arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                         fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                         fn_minus_arg,
                                         arg_minus_fn,
+                                        trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                     ),
                                 );
                             }

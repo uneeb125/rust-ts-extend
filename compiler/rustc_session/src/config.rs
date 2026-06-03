@@ -586,47 +586,62 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
             path.display()
         )
     })?;
+
+    fn parse_compartment_id(val: &serde_json::Value) -> Option<Symbol> {
+        match val {
+            serde_json::Value::String(s) => Some(Symbol::intern(s)),
+            serde_json::Value::Number(n) => n.as_u64().map(|id| Symbol::intern(&id.to_string())),
+            _ => None,
+        }
+    }
+
+    fn parse_compartment_ids(val: &serde_json::Value) -> Result<Vec<Symbol>, String> {
+        match val {
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .map(|v| {
+                    parse_compartment_id(v)
+                        .ok_or_else(|| format!("invalid compartment ID in array: {v}"))
+                })
+                .collect(),
+            _ => parse_compartment_id(val)
+                .map(|s| vec![s])
+                .ok_or_else(|| format!("expected string, number, or array of strings/numbers, got: {val}")),
+        }
+    }
+
     let mut map = PartitionMap::default();
     for (name, val) in obj {
         let entry = match val {
-            serde_json::Value::Number(n) => {
-                let id = n.as_u64().ok_or_else(|| {
-                    format!(
-                        "invalid compartment ID in partition file `{}` for `{name}`",
-                        path.display()
-                    )
-                })?;
+            serde_json::Value::Number(_) | serde_json::Value::String(_) | serde_json::Value::Array(_) => {
                 PartitionEntry {
-                    compartments: vec![Symbol::intern(&id.to_string())],
+                    compartments: parse_compartment_ids(val)?,
                     trusted: vec![],
                 }
             }
             serde_json::Value::Object(o) => {
-                let comp = o
-                    .get("compartment")
-                    .and_then(|v| v.as_u64())
-                    .ok_or_else(|| {
-                        format!(
-                            "missing or invalid `compartment` field in partition file `{}` for `{name}`",
-                            path.display()
-                        )
-                    })?;
-                let trusted: Vec<u64> = o
+                let comp_val = o.get("compartment").ok_or_else(|| {
+                    format!(
+                        "missing `compartment` field in partition file `{}` for `{name}`",
+                        path.display()
+                    )
+                })?;
+                let compartments = parse_compartment_ids(comp_val)?;
+                let trusted: Vec<Symbol> = o
                     .get("trusted")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| parse_compartment_id(v))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                PartitionEntry {
-                    compartments: vec![Symbol::intern(&comp.to_string())],
-                    trusted: trusted
-                        .into_iter()
-                        .map(|t| Symbol::intern(&t.to_string()))
-                        .collect(),
-                }
+                PartitionEntry { compartments, trusted }
             }
             _ => {
                 return Err(format!(
-                    "invalid value type in partition file `{}` for `{name}`: expected number or object",
+                    "invalid value type in partition file `{}` for `{name}`: \
+                     expected string, number, array, or object",
                     path.display()
                 ));
             }
