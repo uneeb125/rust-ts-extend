@@ -482,6 +482,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
                 CompartmentSet::default()
             }
+            hir::ExprKind::Lit(_) => {
+                // Literals inherit the current function's compartments
+                self.root_ctxt.get_current_compartments()
+            }
             _ => CompartmentSet::default(),
         }
     }

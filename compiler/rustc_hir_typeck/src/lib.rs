@@ -170,15 +170,17 @@ fn typeck_with_inspect<'tcx>(
 
     // For const items inside functions, get compartments from the enclosing function
     let def_kind = tcx.def_kind(def_id.to_def_id());
-    let mut compartments = if def_kind == DefKind::Const {
+    let compartments = if def_kind == DefKind::Const {
         let parent_owner_id = tcx.hir_get_parent_item(id);
         let parent_def_id = parent_owner_id.to_def_id();
         if parent_def_id != def_id.to_def_id() {
             // Has a parent item - get its compartments
             TypeckRootCtxt::get_function_compartments(tcx, parent_def_id.expect_local())
         } else {
-            // Top-level const - use crate name as default when feature is active
-            if tcx.compartments_enabled() {
+            // Top-level const - partition file takes priority over crate-name default
+            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                partition_comps
+            } else if tcx.compartments_enabled() {
                 let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                 CompartmentSet { tags: vec![crate_compartment] }
@@ -200,6 +202,10 @@ fn typeck_with_inspect<'tcx>(
                         }
                     })
                     .unwrap_or_else(|| {
+                        // Partition file takes priority over crate-name default
+                        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                            return partition_comps;
+                        }
                         // Use crate name as default when feature is active
                         if tcx.compartments_enabled() {
                             let crate_name = tcx.crate_name(def_id.to_def_id().krate);
@@ -247,8 +253,10 @@ fn typeck_with_inspect<'tcx>(
                                     get_struct_compartments_from_impl(tcx, local_impl_id)
                                 }
                             } else {
-                                // Use crate name as default when feature is active
-                                if tcx.compartments_enabled() {
+                                // Partition file takes priority over crate-name default
+                                if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                                    partition_comps
+                                } else if tcx.compartments_enabled() {
                                     let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                                     let crate_compartment = Symbol::intern(&crate_name.as_str());
                                     CompartmentSet { tags: vec![crate_compartment] }
@@ -257,8 +265,10 @@ fn typeck_with_inspect<'tcx>(
                                 }
                             }
                         } else {
-                            // Use crate name as default when feature is active
-                            if tcx.compartments_enabled() {
+                            // Partition file takes priority over crate-name default
+                            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                                partition_comps
+                            } else if tcx.compartments_enabled() {
                                 let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                                 CompartmentSet { tags: vec![crate_compartment] }
@@ -288,8 +298,10 @@ fn typeck_with_inspect<'tcx>(
                                 get_struct_compartments_from_impl(tcx, local_impl_id)
                             }
                         } else {
-                            // Use crate name as default when feature is active
-                            if tcx.compartments_enabled() {
+                            // Partition file takes priority over crate-name default
+                            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                                partition_comps
+                            } else if tcx.compartments_enabled() {
                                 let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                                 let crate_compartment = Symbol::intern(&crate_name.as_str());
                                 CompartmentSet { tags: vec![crate_compartment] }
@@ -298,8 +310,10 @@ fn typeck_with_inspect<'tcx>(
                             }
                         }
                     } else {
-                        // Use crate name as default when feature is active
-                        if tcx.compartments_enabled() {
+                        // Partition file takes priority over crate-name default
+                        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
+                            partition_comps
+                        } else if tcx.compartments_enabled() {
                             let crate_name = tcx.crate_name(def_id.to_def_id().krate);
                             let crate_compartment = Symbol::intern(&crate_name.as_str());
                             CompartmentSet { tags: vec![crate_compartment] }
@@ -312,17 +326,6 @@ fn typeck_with_inspect<'tcx>(
             _ => CompartmentSet::default(),
         }
     };
-
-    if compartments.tags.is_empty()
-        || compartments.tags.iter().all(|t| t.as_str() == "Default")
-    {
-        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(
-            tcx,
-            def_id.to_def_id(),
-        ) {
-            compartments = partition_comps;
-        }
-    }
 
     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
         eprintln!("[DEBUG typeck] def_id={:?}, compartments={:?}", def_id, compartments);
