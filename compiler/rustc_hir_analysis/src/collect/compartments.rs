@@ -162,7 +162,8 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                 println!("DEBUG: No trusted compartments found at crate level");
             }
             
-            // For #[automatically_derived] code (e.g., derive macros), inherit trusted compartments from self type
+            // For #[automatically_derived] code (e.g., derive macros), inherit trusted
+            // compartments from self type.
             if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
                 if tcx.is_automatically_derived(impl_def_id) {
                     if let Some(local_impl_id) = impl_def_id.as_local() {
@@ -170,13 +171,18 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                         if let rustc_hir::Node::Item(rustc_hir::Item {
                             kind: rustc_hir::ItemKind::Impl(impl_block),
                             ..
-                        }) = tcx.hir_node(impl_hir_id) {
-                            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
+                        }) = tcx.hir_node(impl_hir_id)
+                        {
+                            if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) =
+                                impl_block.self_ty.kind
+                            {
                                 if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
-                                    if matches!(def_kind, rustc_hir::def::DefKind::Struct | rustc_hir::def::DefKind::Enum | rustc_hir::def::DefKind::Union) {
-                                        if std::env::var("MY_DEBUG_COLLECT").is_ok() {
-                                            println!("DEBUG: #[automatically_derived] code, inheriting trusted compartments from self type {:?}", adt_def_id);
-                                        }
+                                    if matches!(
+                                        def_kind,
+                                        rustc_hir::def::DefKind::Struct
+                                            | rustc_hir::def::DefKind::Enum
+                                            | rustc_hir::def::DefKind::Union
+                                    ) {
                                         return trusted_compartments(tcx, adt_def_id);
                                     }
                                 }
@@ -248,14 +254,7 @@ fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
         return None;
     };
     let def_kind = tcx.def_kind(def_id);
-    if !matches!(
-        def_kind,
-        rustc_hir::def::DefKind::Fn
-            | rustc_hir::def::DefKind::AssocFn
-            | rustc_hir::def::DefKind::Struct
-            | rustc_hir::def::DefKind::Enum
-            | rustc_hir::def::DefKind::Union
-    ) {
+    if def_kind != rustc_hir::def::DefKind::Fn && def_kind != rustc_hir::def::DefKind::AssocFn {
         return None;
     }
     if tcx.generics_of(def_id).requires_monomorphization(tcx) {
@@ -337,7 +336,24 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
 
     // Return default compartment if none specified
     if raw_tags.is_empty() {
-        // For trait impl methods or derive-generated impl methods, check the self type's compartments
+        // Derive-generated code (#[automatically_derived]) is boilerplate, not intentional
+        // data flow. Give it the crate-name default so it can call core/alloc/std freely.
+        if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+            let is_derived = tcx.is_automatically_derived(impl_def_id);
+            if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                println!("DEBUG: impl_of_assoc for {:?} -> {:?}, is_automatically_derived={}", tcx.def_path_str(def_id), tcx.def_path_str(impl_def_id), is_derived);
+            }
+            if is_derived {
+                if tcx.compartments_enabled() {
+                    let crate_name = tcx.crate_name(def_id.krate);
+                    let crate_compartment = Symbol::intern(&crate_name.as_str());
+                    return CompartmentSet { tags: vec![crate_compartment] };
+                }
+                return CompartmentSet::default();
+            }
+        }
+
+        // For trait impl methods, check the impl block or self type's compartments
         if let Some(self_type_compartments) = get_self_type_compartments(tcx, def_id) {
             if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                 println!("DEBUG: Using self type compartments for {:?}: {:?}", def_id, self_type_compartments.tags);
