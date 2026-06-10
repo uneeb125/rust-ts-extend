@@ -1801,15 +1801,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
 
                 // Check if receiver's compartments are compatible with method's compartments
+                // If the method is in a trusted compartment, allow the call
+                let method_is_trusted = fn_compartments.tags.iter()
+                    .any(|t| trusted.tags.contains(t));
                 if self.tcx.compartments_enabled() && !rcvr_compartments.tags.is_empty()
+                    && !method_is_trusted
                     && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                 {
                     self.tcx.dcx().span_err(
                         rcvr.span,
                         format!(
-                            "receiver has compartments ({}) that are not allowed by method's compartments ({})",
+                            "receiver has compartments ({}) that are not allowed by method's compartments ({}) trusted ({})",
                             rcvr_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                         ),
                     );
                 }
