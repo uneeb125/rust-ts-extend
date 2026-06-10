@@ -15,7 +15,7 @@ use rustc_middle::ty::adjustment::{
 use rustc_middle::ty::{self, GenericArgsRef, Ty, TyCtxt, TypeVisitableExt};
 use rustc_middle::{bug, span_bug};
 use rustc_span::def_id::LocalDefId;
-use rustc_span::{Span, Symbol, sym};
+use rustc_span::{Span, sym};
 use rustc_target::spec::{AbiMap, AbiMapping};
 use rustc_trait_selection::error_reporting::traits::DefIdOrName;
 use rustc_trait_selection::infer::InferCtxtExt as _;
@@ -588,114 +588,86 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let current_def_id = self.body_id.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if let Some(local_def_id) = def_id.as_local() {
-                let fn_compartments: rustc_middle::compartments::CompartmentSet = if self.tcx.impl_of_assoc(def_id).is_some() {
-                    // For impl methods, use the hierarchy (method -> impl -> struct)
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
-                        self.tcx,
-                        local_def_id,
-                    )
-                } else {
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
-                        self.tcx,
-                        local_def_id,
-                    )
-                };
+            let fn_compartments = crate::compartment_set_with_default(self.tcx, def_id);
 
-                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
-                }
+            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                eprintln!("DEBUG: Function call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
+            }
 
-                // For enum variant constructors, check if the enum has explicit compartments
-                // If enum only has default compartments, skip compartment checking
-                let is_variant_constructor = matches!(
-                    self.tcx.def_kind(def_id),
-                    def::DefKind::Ctor(def::CtorOf::Variant, ..)
-                );
-                let skip_compartment_check = if is_variant_constructor {
-                    let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
-                    let parent_item = self.tcx.hir_get_parent_item(hir_id);
-                    let parent_def_kind = self.tcx.def_kind(parent_item.to_def_id());
-                    if matches!(parent_def_kind, def::DefKind::Enum) {
-                        let enum_compartments = self.tcx.compartment_set(parent_item.to_def_id());
-                        let crate_name = self.tcx.crate_name(def_id.krate);
-                        let is_explicit = !enum_compartments.tags.is_empty() &&
-                            !enum_compartments.tags.iter().all(|t| {
-                                let s = t.as_str();
-                                s == "Default" || s == crate_name.as_str()
-                            });
-                        !is_explicit
-                    } else {
-                        false // Struct variants - not an enum
-                    }
+            // For enum variant constructors, check if the enum has explicit compartments
+            let is_variant_constructor = matches!(
+                self.tcx.def_kind(def_id),
+                def::DefKind::Ctor(def::CtorOf::Variant, ..)
+            );
+            let skip_compartment_check = if is_variant_constructor && def_id.is_local() {
+                let local_def_id = def_id.expect_local();
+                let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
+                let parent_item = self.tcx.hir_get_parent_item(hir_id);
+                let parent_def_kind = self.tcx.def_kind(parent_item.to_def_id());
+                if matches!(parent_def_kind, def::DefKind::Enum) {
+                    let enum_compartments = crate::compartment_set_with_default(self.tcx, parent_item.to_def_id());
+                    let crate_name = self.tcx.crate_name(def_id.krate);
+                    let is_explicit = !enum_compartments.tags.is_empty() &&
+                        !enum_compartments.tags.iter().all(|t| {
+                            let s = t.as_str();
+                            s == "Default" || s == crate_name.as_str()
+                        });
+                    !is_explicit
                 } else {
                     false
-                };
+                }
+            } else {
+                false
+            };
 
-                // Check if the callee's compartments are accessible from current context
-                // If the callee's compartments are trusted, we can call it regardless of argument compartments
-                // Unsafe bypasses this check
-                if !skip_compartment_check {
-                    let current_compartments = self.root_ctxt.get_current_compartments();
+            if !skip_compartment_check {
+                let current_compartments = self.root_ctxt.get_current_compartments();
+                let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
 
-                    // Check if we are inside unsafe block - skip callee compartment check if so
-                    let is_unsafe = crate::cast::is_inside_unsafe_context(self.tcx, call_expr.hir_id);
+                if self.tcx.compartments_enabled() && !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                    self.tcx.dcx().span_err(
+                        call_expr.span,
+                        format!(
+                            "cannot call function with compartments ({}) - not available in current scope (available: {}, trusted: {})",
+                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            if current_compartments.tags.is_empty() {
+                                "none".to_string()
+                            } else {
+                                current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                            },
+                            trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        ),
+                    );
+                }
 
-                    if self.tcx.compartments_enabled() && !is_unsafe && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
-                        self.tcx.dcx().span_err(
-                            call_expr.span,
-                            format!(
-                                "cannot call function with compartments ({}) - not available in current scope (available: {}, trusted: {})",
-                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                if current_compartments.tags.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                },
-                                trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                            ),
-                        );
-                    }
-
-                    // Check if arguments' compartments are compatible with the function's compartments
-                    // This check is NOT bypassed by unsafe - arguments must always be compatible
-                    for arg in arg_exprs {
-                        let arg_compartments = self.find_compartments_in_expr(arg);
-
-                        if !arg_compartments.tags.is_empty() {
-                            // Compute "untrusted" (violations) - keeping your original logic for the 'if' check
-                            let untrusted = arg_compartments.tags.iter()
-                                .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
-                                .collect::<Vec<_>>();
-
-                            if self.tcx.compartments_enabled() && !untrusted.is_empty() {
-                                // 1. Difference: fn_compartments - arg_compartments
-                                let fn_minus_arg = fn_compartments.tags.iter()
-                                    .filter(|t| !arg_compartments.tags.contains(t))
-                                    .map(|s| s.to_ident_string())
-                                    .collect::<Vec<_>>()
-                                    .join(", ");
-
-                                // 2. Difference: arg_compartments - fn_compartments
-                                let arg_minus_fn = arg_compartments.tags.iter()
-                                    .filter(|t| !fn_compartments.tags.contains(t))
-                                    .map(|s| s.to_ident_string())
-                                    .collect::<Vec<_>>()
-                                    .join(", ");
-
-                                self.tcx.dcx().span_err(
-                                    arg.span,
-                                    format!(
-                                        "arg has comps ({}) not allowed by func comps ({}); \
-                                        (fn - arg): [{}], (arg - fn): [{}], trusted ({})",
-                                        arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                        fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                        fn_minus_arg,
-                                        arg_minus_fn,
-                                        trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                    ),
-                                );
-                            }
+                for arg in arg_exprs {
+                    let arg_compartments = self.find_compartments_in_expr(arg);
+                    if !arg_compartments.tags.is_empty() {
+                        let untrusted = arg_compartments.tags.iter()
+                            .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
+                            .collect::<Vec<_>>();
+                        if self.tcx.compartments_enabled() && !untrusted.is_empty() {
+                            let fn_minus_arg = fn_compartments.tags.iter()
+                                .filter(|t| !arg_compartments.tags.contains(t))
+                                .map(|s| s.to_ident_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            let arg_minus_fn = arg_compartments.tags.iter()
+                                .filter(|t| !fn_compartments.tags.contains(t))
+                                .map(|s| s.to_ident_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            self.tcx.dcx().span_err(
+                                arg.span,
+                                format!(
+                                    "arg has comps ({}) not allowed by func comps ({}); (fn - arg): [{}], (arg - fn): [{}], trusted ({})",
+                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    fn_minus_arg,
+                                    arg_minus_fn,
+                                    trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                ),
+                            );
                         }
                     }
                 }
@@ -721,33 +693,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         // Record function's compartments on the call expression
         // The return value inherits the function's compartments
         if let Some(def_id) = def_id {
-            let fn_compartments: rustc_middle::compartments::CompartmentSet = if let Some(local_def_id) = def_id.as_local() {
-                if self.tcx.impl_of_assoc(def_id).is_some() {
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
-                        self.tcx,
-                        local_def_id,
-                    )
-                } else {
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(
-                        self.tcx,
-                        local_def_id,
-                    )
-                }
-            } else {
-                // Non-local function - use crate name as default when feature is active
-                let compartments = self.tcx.compartment_set(def_id);
-                if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
-                    if self.tcx.compartments_enabled() {
-                        let crate_name = self.tcx.crate_name(def_id.krate);
-                        let crate_compartment = Symbol::intern(&crate_name.as_str());
-                        rustc_middle::compartments::CompartmentSet { tags: vec![crate_compartment] }
-                    } else {
-                        compartments.clone()
-                    }
-                } else {
-                    compartments.clone()
-                }
-            };
+            let fn_compartments = crate::compartment_set_with_default(self.tcx, def_id);
 
             // For variant constructors with only default compartments, don't record
             // - let the context determine compartments
@@ -761,7 +707,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let parent_item = self.tcx.hir_get_parent_item(hir_id);
                 let parent_def_kind = self.tcx.def_kind(parent_item.to_def_id());
                 if matches!(parent_def_kind, def::DefKind::Enum) {
-                    let enum_compartments = self.tcx.compartment_set(parent_item.to_def_id());
+                    let enum_compartments = crate::compartment_set_with_default(self.tcx, parent_item.to_def_id());
                     let crate_name = self.tcx.crate_name(def_id.krate);
                     let is_explicit = !enum_compartments.tags.is_empty() &&
                         !enum_compartments.tags.iter().all(|t| {
@@ -779,7 +725,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             if !fn_compartments.tags.is_empty() && !skip_recording {
                 self.typeck_results.borrow_mut().node_compartments_mut().insert(
                     call_expr.hir_id,
-                    fn_compartments,
+                    fn_compartments.clone(),
                 );
             }
         } else {

@@ -2,15 +2,13 @@ use std::cell::{Cell, RefCell};
 use std::ops::Deref;
 
 use rustc_data_structures::unord::{UnordMap, UnordSet};
-use rustc_hir::def_id::{DefId, LocalDefId};
-use rustc_hir::{self as hir, def::DefKind, def::Res, HirId, HirIdMap, LangItem};
-use rustc_hir::attrs::AttributeKind;
+use rustc_span::def_id::LocalDefId;
+use rustc_hir::{self as hir, HirId, HirIdMap, LangItem};
 use rustc_infer::infer::{InferCtxt, InferOk, OpaqueTypeStorageEntries, TyCtxtInferExt};
 use rustc_middle::span_bug;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeVisitableExt, TypingMode};
 use rustc_middle::compartments::CompartmentSet;
-use rustc_session::config::CompartmentMissing;
-use rustc_span::{Span, Symbol};
+use rustc_span::Span;
 use rustc_span::def_id::LocalDefIdMap;
 use rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 use rustc_trait_selection::traits::{
@@ -207,189 +205,6 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
     #[allow(dead_code)]
     pub(super) fn get_current_compartments(&self) -> CompartmentSet {
         self.current_compartments.clone()
-    }
-
-    pub(super) fn lookup_partition(
-        tcx: TyCtxt<'_>,
-        def_id: DefId,
-    ) -> Option<CompartmentSet> {
-        let Some(ref partition_map) = tcx.sess.compartment_partition_map else {
-            return None;
-        };
-        let def_kind = tcx.def_kind(def_id);
-        if def_kind != DefKind::Fn && def_kind != DefKind::AssocFn {
-            return None;
-        }
-        if tcx.generics_of(def_id).requires_monomorphization(tcx) {
-            return None;
-        }
-        let crate_name = tcx.crate_name(def_id.krate);
-        let def_path = rustc_middle::ty::print::with_no_trimmed_paths!(tcx.def_path_str(def_id));
-        let full_path = format!("{}::{}", crate_name, def_path);
-        match partition_map.get(full_path.as_str()) {
-            Some(entry) => Some(CompartmentSet::from_iter(
-                entry.compartments.iter().cloned(),
-            )),
-            None => {
-                let missing = tcx.sess.opts.unstable_opts.compartment_missing;
-                match missing {
-                    CompartmentMissing::Skip => {}
-                    CompartmentMissing::Error => {
-                        tcx.dcx().span_err(
-                            tcx.def_span(def_id),
-                            format!(
-                                "function `{full_path}` not found in compartment partition file"
-                            ),
-                        );
-                    }
-                    CompartmentMissing::Warn => {
-                        tcx.dcx().span_warn(
-                            tcx.def_span(def_id),
-                            format!(
-                                "function `{full_path}` not found in compartment partition file, \
-                                 using default compartments"
-                            ),
-                        );
-                    }
-                }
-                None
-            }
-        }
-    }
-
-    pub(super) fn get_function_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
-        let hir_id = tcx.local_def_id_to_hir_id(def_id);
-        let attrs = tcx.hir_attrs(hir_id);
-        attrs
-            .iter()
-            .find_map(|attr| {
-                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                if let Some(partition_comps) = Self::lookup_partition(tcx, def_id.to_def_id()) {
-                    return partition_comps;
-                }
-                // Use crate name as default when feature is active
-                if tcx.compartments_enabled() {
-                    let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                    let crate_compartment = Symbol::intern(&crate_name.as_str());
-                    CompartmentSet { tags: vec![crate_compartment] }
-                } else {
-                    CompartmentSet::default()
-                }
-            })
-    }
-
-    /// Get explicit compartments only - returns empty if no explicit attribute
-    /// Does NOT use crate name as fallback
-    pub(super) fn get_explicit_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
-        let hir_id = tcx.local_def_id_to_hir_id(def_id);
-        let attrs = tcx.hir_attrs(hir_id);
-        attrs
-            .iter()
-            .find_map(|attr| {
-                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or(CompartmentSet::default())
-    }
-
-    /// Check if compartments are explicitly set (not Default, not crate name)
-    fn has_explicit_compartments(cs: &CompartmentSet) -> bool {
-        !cs.tags.is_empty() && 
-        !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
-    }
-
-    /// Get compartments from an impl block or trait impl for a method
-    /// Priority: method's own explicit -> impl block explicit -> self type explicit (struct/enum/union) -> crate name default
-    pub(super) fn get_impl_method_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
-        let debug = std::env::var("COMPARTMENT_DEBUG").is_ok();
-        
-        // 1. First check the method's own explicit compartments
-        let method_compartments = Self::get_explicit_compartments(tcx, def_id);
-        if debug {
-            eprintln!("DEBUG: get_impl_method_compartments: method {:?} has explicit compartments: {:?}", def_id, method_compartments.tags);
-        }
-        if Self::has_explicit_compartments(&method_compartments) {
-            return method_compartments;
-        }
-        
-        // 2. Check the impl block's explicit compartments
-        let def_id = def_id.to_def_id();
-        
-        // Handle trait methods: if impl_of_assoc returns None, check trait_of_assoc
-        if tcx.impl_of_assoc(def_id).is_none() {
-            // This might be a trait method - check the trait's compartments
-            if let Some(trait_id) = tcx.trait_of_assoc(def_id) {
-                if let Some(local_trait_id) = trait_id.as_local() {
-                    let trait_compartments = Self::get_explicit_compartments(tcx, local_trait_id);
-                    if debug {
-                        eprintln!("DEBUG: get_impl_method_compartments: trait {:?} has explicit compartments: {:?}", trait_id, trait_compartments.tags);
-                    }
-                    if Self::has_explicit_compartments(&trait_compartments) {
-                        return trait_compartments;
-                    }
-                }
-            }
-        }
-        
-        if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
-            if let Some(local_impl_id) = impl_def_id.as_local() {
-                let impl_compartments = Self::get_explicit_compartments(tcx, local_impl_id);
-                if debug {
-                    eprintln!("DEBUG: get_impl_method_compartments: impl block {:?} has explicit compartments: {:?}", impl_def_id, impl_compartments.tags);
-                }
-                if Self::has_explicit_compartments(&impl_compartments) {
-                    return impl_compartments;
-                }
-                
-                // 3. Check the associated type's (struct/enum/union) compartments using compartment_set query
-                let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
-                if let hir::Node::Item(hir::Item { 
-                    kind: hir::ItemKind::Impl(impl_block), 
-                    .. 
-                }) = tcx.hir_node(impl_hir_id) {
-                    let self_ty = impl_block.self_ty;
-                    if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = self_ty.kind {
-                        if let Res::Def(DefKind::Struct | DefKind::Enum | DefKind::Union, adt_def_id) = path.res {
-                            // Use compartment_set query which has get_self_type_compartments logic
-                            let adt_compartments = tcx.compartment_set(adt_def_id);
-                            if debug {
-                                eprintln!("DEBUG: get_impl_method_compartments: ADT {:?} has compartments: {:?}", adt_def_id, adt_compartments.tags);
-                            }
-                            if Self::has_explicit_compartments(&adt_compartments) {
-                                return adt_compartments.clone();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 4. Fall back to partition file or crate name default
-        if debug {
-            eprintln!("DEBUG: get_impl_method_compartments: checking partition");
-        }
-        if let Some(partition_comps) = Self::lookup_partition(tcx, def_id) {
-            return partition_comps;
-        }
-        if debug {
-            eprintln!("DEBUG: get_impl_method_compartments: using crate name default");
-        }
-        if tcx.compartments_enabled() {
-            let crate_name = tcx.crate_name(def_id.krate);
-            let crate_compartment = Symbol::intern(&crate_name.as_str());
-            CompartmentSet { tags: vec![crate_compartment] }
-        } else {
-            CompartmentSet::default()
-        }
     }
 
     #[allow(dead_code)]

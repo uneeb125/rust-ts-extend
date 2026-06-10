@@ -842,33 +842,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let fn_sig = ty.fn_sig(tcx);
 
             // Record compartments for function references (not just calls)
-            let fn_compartments = if let Some(local_def_id) = did.as_local() {
-                if tcx.impl_of_assoc(did).is_some() {
-                    // For impl methods, use the hierarchy
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(tcx, local_def_id)
-                } else {
-                    super::typeck_root_ctxt::TypeckRootCtxt::get_function_compartments(tcx, local_def_id)
-                }
-            } else {
-                // Non-local function - use crate name as default when feature is active
-                let compartments = tcx.compartment_set(did);
-                if compartments.tags.is_empty() || compartments.tags.len() == 1 && compartments.tags[0].as_str() == "Default" {
-                    if tcx.compartments_enabled() {
-                        let crate_name = tcx.crate_name(did.krate);
-                        let crate_compartment = Symbol::intern(&crate_name.as_str());
-                        CompartmentSet { tags: vec![crate_compartment] }
-                    } else {
-                        compartments.clone()
-                    }
-                } else {
-                    compartments.clone()
-                }
-            };
+            let fn_compartments = crate::compartment_set_with_default(tcx, did);
             if !fn_compartments.tags.is_empty() {
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                     eprintln!("DEBUG: check_expr_path: recording compartments {:?} for fn {:?}", fn_compartments.tags, did);
                 }
-                self.typeck_results.borrow_mut().node_compartments_mut().insert(expr.hir_id, fn_compartments);
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(expr.hir_id, fn_compartments.clone());
             }
 
             if tcx.is_intrinsic(did, sym::transmute) {
@@ -1785,118 +1764,93 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
                 let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-                    // Check compartments for method call
-                    if let Some(def_id) = method.def_id.as_local() {
-                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                            eprintln!("DEBUG: def_id is local: {:?}", def_id);
-                        }
-                        let mut fn_compartments: CompartmentSet = super::typeck_root_ctxt::TypeckRootCtxt::get_impl_method_compartments(
-                            self.tcx,
-                            def_id,
-                        );
+                // Check compartments for method call
+                let fn_compartments = crate::compartment_set_with_default(self.tcx, method.def_id);
 
-                        // Fallback: if method compartments are empty or default, check receiver type's compartments
-                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                            eprintln!("DEBUG: fn_compartments = {:?}, checking receiver type", fn_compartments.tags);
-                        }
-                        if fn_compartments.tags.is_empty()
-                            || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == "Default")
-                            || (fn_compartments.tags.len() == 1 && fn_compartments.tags[0].as_str() == self.tcx.crate_name(def_id.to_def_id().krate).as_str()) {
-                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: fn_compartments is default/empty, rcvr_t kind = {:?}", rcvr_t.kind());
-                            }
-                            if let ty::Adt(adt_def, _) = rcvr_t.kind() {
-                                let type_compartments: CompartmentSet = self.tcx.compartment_set(adt_def.did()).clone();
-                                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                    eprintln!("DEBUG: Receiver type {:?} has compartments: {:?}", adt_def.did(), type_compartments.tags);
-                                }
-                                if !type_compartments.tags.is_empty() && !(type_compartments.tags.len() == 1 && type_compartments.tags[0].as_str() == "Default") {
-                                    fn_compartments = type_compartments;
-                                }
-                            }
-                        }
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: fn_compartments = {:?}, checking receiver type", fn_compartments.tags);
+                }
 
-                    // Check receiver's compartments against method's compartments
-                    // For Path expressions referring to locals, use the local's hir_id for compartment lookup
-                    let rcvr_compartment_hir_id = match rcvr.kind {
-                        hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
-                            if let hir::def::Res::Local(var_hir_id) = path.res {
-                                var_hir_id
-                            } else {
-                                rcvr.hir_id
-                            }
-                        }
-                        _ => rcvr.hir_id,
-                    };
-
-                    let rcvr_compartments = self.typeck_results.borrow()
-                        .node_compartment(rcvr_compartment_hir_id)
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            if let ty::Adt(adt_def, _) = rcvr_t.kind() {
-                                self.tcx.compartment_set(adt_def.did()).clone()
-                            } else {
-                                CompartmentSet::empty()
-                            }
-                        });
-
-                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                        eprintln!("DEBUG: Receiver expr {:?} (resolved to {:?}) has compartments: {:?}",
-                            rcvr.hir_id, rcvr_compartment_hir_id, rcvr_compartments.tags);
-                    }
-
-                    // Check if receiver's compartments are compatible with method's compartments
-                    if self.tcx.compartments_enabled() && !rcvr_compartments.tags.is_empty()
-                        && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
-                    {
-                        self.tcx.dcx().span_err(
-                            rcvr.span,
-                            format!(
-                                "receiver has compartments ({}) that are not allowed by method's compartments ({})",
-                                rcvr_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                            ),
-                        );
-                    }
-
-                    if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                        eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", def_id, fn_compartments.tags);
-                    }
-
-                    // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
-                    for arg in args {
-                        let arg_ty = self.typeck_results.borrow().expr_ty(arg);
-
-                        // Get compartments from the argument's type
-                        if let ty::Adt(adt_def, _) = arg_ty.kind() {
-                            let type_def_id = adt_def.did();
-                            let type_compartments = self.tcx.compartment_set(type_def_id);
-
-                            if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
-                                    self.tcx.def_path_str(type_def_id), type_compartments.tags);
-                            }
-
-                            // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                            if self.tcx.compartments_enabled() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
-                                self.tcx.dcx().span_err(
-                                    arg.span,
-                                    format!(
-                                        "arg type has ({}) not allowed by method's comps ({})",
-                                        type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
-                                        fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
-                                    ),
-                                );
-                            }
+                // Check receiver's compartments against method's compartments
+                // For Path expressions referring to locals, use the local's hir_id for compartment lookup
+                let rcvr_compartment_hir_id = match rcvr.kind {
+                    hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                        if let hir::def::Res::Local(var_hir_id) = path.res {
+                            var_hir_id
+                        } else {
+                            rcvr.hir_id
                         }
                     }
+                    _ => rcvr.hir_id,
+                };
 
-                    // Record compartments for this method call (return value compartments)
-                    self.typeck_results.borrow_mut().node_compartments_mut().insert(
-                        expr.hir_id,
-                        fn_compartments,
+                let rcvr_compartments = self.typeck_results.borrow()
+                    .node_compartment(rcvr_compartment_hir_id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        if let ty::Adt(adt_def, _) = rcvr_t.kind() {
+                                crate::compartment_set_with_default(self.tcx, adt_def.did())
+                        } else {
+                            CompartmentSet::empty()
+                        }
+                    });
+
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Receiver expr {:?} (resolved to {:?}) has compartments: {:?}",
+                        rcvr.hir_id, rcvr_compartment_hir_id, rcvr_compartments.tags);
+                }
+
+                // Check if receiver's compartments are compatible with method's compartments
+                if self.tcx.compartments_enabled() && !rcvr_compartments.tags.is_empty()
+                    && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
+                {
+                    self.tcx.dcx().span_err(
+                        rcvr.span,
+                        format!(
+                            "receiver has compartments ({}) that are not allowed by method's compartments ({})",
+                            rcvr_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                            fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                        ),
                     );
                 }
+
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", method.def_id, fn_compartments.tags);
+                }
+
+                // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
+                for arg in args {
+                    let arg_ty = self.typeck_results.borrow().expr_ty(arg);
+
+                    // Get compartments from the argument's type
+                    if let ty::Adt(adt_def, _) = arg_ty.kind() {
+                        let type_def_id = adt_def.did();
+                        let type_compartments = crate::compartment_set_with_default(self.tcx, type_def_id);
+
+                        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                            eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
+                                self.tcx.def_path_str(type_def_id), type_compartments.tags);
+                        }
+
+                        // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
+                        if self.tcx.compartments_enabled() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                            self.tcx.dcx().span_err(
+                                arg.span,
+                                format!(
+                                    "arg type has ({}) not allowed by method's comps ({})",
+                                    type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                // Record compartments for this method call (return value compartments)
+                self.typeck_results.borrow_mut().node_compartments_mut().insert(
+                    expr.hir_id,
+                    fn_compartments.clone(),
+                );
 
                 method.sig.output()
             }
@@ -2234,7 +2188,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         let adt = adt_ty.ty_adt_def().expect("`check_struct_path` returned non-ADT type");
         let struct_def_id = adt.did();
-        let struct_compartments = self.tcx.compartment_set(struct_def_id);
+        let struct_compartments = crate::compartment_set_with_default(self.tcx, struct_def_id);
 
         // Check if struct has truly explicit compartments (not Default or crate-name defaults)
         let use_compartments = self.tcx.compartments_enabled();

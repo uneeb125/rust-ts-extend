@@ -57,12 +57,12 @@ use rustc_middle::query::Providers;
 use rustc_middle::ty::{self, Ty, TyCtxt};
 use rustc_middle::{bug, span_bug};
 use rustc_middle::compartments::CompartmentSet;
+use rustc_hir::def_id::DefId;
 use rustc_session::config;
-use rustc_span::{Span, Symbol};
+use rustc_span::Span;
 use rustc_span::def_id::LocalDefId;
 use tracing::{debug, instrument};
 use typeck_root_ctxt::TypeckRootCtxt;
-use rustc_hir::attrs::AttributeKind;
 
 use crate::check::check_fn;
 use crate::coercion::DynamicCoerceMany;
@@ -70,39 +70,6 @@ use crate::diverges::Diverges;
 use crate::expectation::Expectation;
 use crate::fn_ctxt::LoweredTy;
 use crate::gather_locals::GatherLocalsVisitor;
-
-fn get_struct_compartments_from_impl(tcx: TyCtxt<'_>, local_impl_id: LocalDefId) -> CompartmentSet {
-    let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
-    if let hir::Node::Item(hir::Item {
-        kind: hir::ItemKind::Impl(impl_block),
-        ..
-    }) = tcx.hir_node(impl_hir_id) {
-        if let hir::TyKind::Path(hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
-            if let Res::Def(DefKind::Struct | DefKind::Enum | DefKind::Union, adt_def_id) = path.res {
-                if let Some(local_adt_id) = adt_def_id.as_local() {
-                    let adt_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_adt_id));
-                    if let Some(attr) = adt_attrs.iter().find_map(|attr| {
-                        if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                            Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                        } else {
-                            None
-                        }
-                    }) {
-                        return attr;
-                    }
-                }
-            }
-        }
-    }
-    // Use crate name as default when feature is active
-    if tcx.compartments_enabled() {
-        let crate_name = tcx.crate_name(local_impl_id.to_def_id().krate);
-        let crate_compartment = Symbol::intern(&crate_name.as_str());
-        CompartmentSet { tags: vec![crate_compartment] }
-    } else {
-        CompartmentSet::default()
-    }
-}
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
@@ -121,6 +88,20 @@ macro_rules! type_error_struct {
 
 fn used_trait_imports(tcx: TyCtxt<'_>, def_id: LocalDefId) -> &UnordSet<LocalDefId> {
     &tcx.typeck(def_id).used_trait_imports
+}
+
+/// Get compartments for any def_id, with crate-name default for non-local functions.
+/// The `compartment_set` query returns empty for non-local (to avoid query reentrancy),
+/// so callers during typeck need this wrapper to get the correct compartment.
+fn compartment_set_with_default(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+    let cs = tcx.compartment_set(def_id);
+    if cs.tags.is_empty() && tcx.compartments_enabled() {
+        let crate_name = tcx.crate_name(def_id.krate);
+        let crate_compartment = rustc_span::Symbol::intern(&crate_name.as_str());
+        CompartmentSet { tags: vec![crate_compartment] }
+    } else {
+        cs.clone()
+    }
 }
 
 fn typeck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> &'tcx ty::TypeckResults<'tcx> {
@@ -168,163 +149,20 @@ fn typeck_with_inspect<'tcx>(
 
     let param_env = tcx.param_env(def_id);
 
-    // For const items inside functions, get compartments from the enclosing function
+    // For const items inside functions, get compartments from the enclosing function.
+    // Everything else delegates to the compartment_set query which handles all resolution
+    // (HIR attrs, impl block attrs, self-type inheritance, partition file, crate-name default).
     let def_kind = tcx.def_kind(def_id.to_def_id());
     let compartments = if def_kind == DefKind::Const {
         let parent_owner_id = tcx.hir_get_parent_item(id);
         let parent_def_id = parent_owner_id.to_def_id();
         if parent_def_id != def_id.to_def_id() {
-            // Has a parent item - get its compartments
-            TypeckRootCtxt::get_function_compartments(tcx, parent_def_id.expect_local())
+            compartment_set_with_default(tcx, parent_def_id)
         } else {
-            // Top-level const - partition file takes priority over crate-name default
-            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                partition_comps
-            } else if tcx.compartments_enabled() {
-                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                let crate_compartment = Symbol::intern(&crate_name.as_str());
-                CompartmentSet { tags: vec![crate_compartment] }
-            } else {
-                CompartmentSet::default()
-            }
+            compartment_set_with_default(tcx, def_id.to_def_id())
         }
     } else {
-        match node {
-            hir::Node::Item(item) => {
-                let attrs = tcx.hir_attrs(item.hir_id());
-                attrs
-                    .iter()
-                    .find_map(|attr| {
-                        if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                            Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| {
-                        // Partition file takes priority over crate-name default
-                        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                            return partition_comps;
-                        }
-                        // Use crate name as default when feature is active
-                        if tcx.compartments_enabled() {
-                            let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                            let crate_compartment = Symbol::intern(&crate_name.as_str());
-                            CompartmentSet { tags: vec![crate_compartment] }
-                        } else {
-                            CompartmentSet::default()
-                        }
-                    })
-            }
-            hir::Node::ImplItem(item) => {
-                // Priority: method's own (non-Default) -> impl block -> associated struct
-                fn is_explicit(cs: &CompartmentSet) -> bool {
-                    !cs.tags.is_empty() && !(cs.tags.len() == 1 && cs.tags[0].as_str() == "Default")
-                }
-
-                let method_attrs = tcx.hir_attrs(item.hir_id());
-                if let Some(attr) = method_attrs.iter().find_map(|attr| {
-                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                    } else {
-                        None
-                    }
-                }) {
-                    if is_explicit(&attr) {
-                        attr
-                    } else {
-                        // Check impl block
-                        if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
-                            if let Some(local_impl_id) = impl_def_id.as_local() {
-                                let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
-                                if let Some(attr) = impl_attrs.iter().find_map(|attr| {
-                                    if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                                        Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                                    } else {
-                                        None
-                                    }
-                                }) {
-                                    if is_explicit(&attr) {
-                                        attr
-                                    } else {
-                                        get_struct_compartments_from_impl(tcx, local_impl_id)
-                                    }
-                                } else {
-                                    get_struct_compartments_from_impl(tcx, local_impl_id)
-                                }
-                            } else {
-                                // Partition file takes priority over crate-name default
-                                if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                                    partition_comps
-                                } else if tcx.compartments_enabled() {
-                                    let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                                    let crate_compartment = Symbol::intern(&crate_name.as_str());
-                                    CompartmentSet { tags: vec![crate_compartment] }
-                                } else {
-                                    CompartmentSet::default()
-                                }
-                            }
-                        } else {
-                            // Partition file takes priority over crate-name default
-                            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                                partition_comps
-                            } else if tcx.compartments_enabled() {
-                                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                                let crate_compartment = Symbol::intern(&crate_name.as_str());
-                                CompartmentSet { tags: vec![crate_compartment] }
-                            } else {
-                                CompartmentSet::default()
-                            }
-                        }
-                    }
-                } else {
-                    // Check impl block
-                    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id.to_def_id()) {
-                        if let Some(local_impl_id) = impl_def_id.as_local() {
-                            let impl_attrs = tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_impl_id));
-                            if let Some(attr) = impl_attrs.iter().find_map(|attr| {
-                                if let hir::Attribute::Parsed(AttributeKind::Compartments(comps, _)) = attr {
-                                    Some(CompartmentSet::from_iter(comps.iter().map(|(s, _)| *s)))
-                                } else {
-                                    None
-                                }
-                            }) {
-                                if is_explicit(&attr) {
-                                    attr
-                                } else {
-                                    get_struct_compartments_from_impl(tcx, local_impl_id)
-                                }
-                            } else {
-                                get_struct_compartments_from_impl(tcx, local_impl_id)
-                            }
-                        } else {
-                            // Partition file takes priority over crate-name default
-                            if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                                partition_comps
-                            } else if tcx.compartments_enabled() {
-                                let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                                let crate_compartment = Symbol::intern(&crate_name.as_str());
-                                CompartmentSet { tags: vec![crate_compartment] }
-                            } else {
-                                CompartmentSet::default()
-                            }
-                        }
-                    } else {
-                        // Partition file takes priority over crate-name default
-                        if let Some(partition_comps) = TypeckRootCtxt::lookup_partition(tcx, def_id.to_def_id()) {
-                            partition_comps
-                        } else if tcx.compartments_enabled() {
-                            let crate_name = tcx.crate_name(def_id.to_def_id().krate);
-                            let crate_compartment = Symbol::intern(&crate_name.as_str());
-                            CompartmentSet { tags: vec![crate_compartment] }
-                        } else {
-                            CompartmentSet::default()
-                        }
-                    }
-                }
-            }
-            _ => CompartmentSet::default(),
-        }
+        compartment_set_with_default(tcx, def_id.to_def_id())
     };
 
     if std::env::var("COMPARTMENT_DEBUG").is_ok() {

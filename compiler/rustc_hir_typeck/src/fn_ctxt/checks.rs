@@ -151,7 +151,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                                 let parent_def_id = parent_owner_id.to_def_id();
                                 if parent_def_id != def_id {
-                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: Call to const {:?}, using parent {:?} compartments: {:?}",
                                             def_id, parent_def_id, parent_compartments.tags);
@@ -160,7 +160,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 }
                             }
 
-                            let callee_compartments = self.tcx.compartment_set(def_id);
+                            let callee_compartments = crate::compartment_set_with_default(self.tcx, def_id);
                             if callee_compartments.tags.is_empty() || callee_compartments.tags.len() == 1 && callee_compartments.tags[0].as_str() == "Default" {
                                 if self.tcx.compartments_enabled() {
                                     let crate_name = self.tcx.crate_name(def_id.krate);
@@ -200,7 +200,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                                 let parent_def_id = parent_owner_id.to_def_id();
                                 if parent_def_id != def_id {
-                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: Method call to const {:?}, using parent {:?} compartments: {:?}",
                                             def_id, parent_def_id, parent_compartments.tags);
@@ -210,7 +210,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             }
                         }
 
-                        let method_compartments = self.tcx.compartment_set(def_id);
+                        let method_compartments = crate::compartment_set_with_default(self.tcx, def_id);
                         if method_compartments.tags.is_empty() || method_compartments.tags.len() == 1 && method_compartments.tags[0].as_str() == "Default" {
                             if self.tcx.compartments_enabled() {
                                 let crate_name = self.tcx.crate_name(def_id.krate);
@@ -241,7 +241,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                        matches!(def_kind, DefKind::Ctor(CtorOf::Variant, _)) {
                         let expr_ty = self.typeck_results.borrow().expr_ty(expr);
                         if let ty::Adt(adt_def, _) = expr_ty.kind() {
-                            let enum_compartments = self.tcx.compartment_set(adt_def.did());
+                            let enum_compartments = crate::compartment_set_with_default(self.tcx, adt_def.did());
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: Path to variant/ctor {:?}, enum {:?} has compartments: {:?}",
                                     def_id, adt_def.did(), enum_compartments.tags);
@@ -280,7 +280,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     eprintln!("DEBUG: Const item {:?} parent is {:?}", local_id, parent_def_id);
                                 }
                                 if parent_def_id != local_id.to_def_id() {
-                                    let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                    let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: parent_compartments for {:?}: {:?}", parent_def_id, parent_compartments.tags);
                                     }
@@ -288,7 +288,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 }
                             }
 
-                            let def_compartments = self.tcx.compartment_set(local_id.to_def_id());
+                            let def_compartments = crate::compartment_set_with_default(self.tcx, local_id.to_def_id());
                             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                 eprintln!("DEBUG: def_compartments for {:?}: {:?}", local_id, def_compartments.tags);
                             }
@@ -316,7 +316,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                     parent_def_id, local_id, parent_def_id != local_id.to_def_id());
                             }
                             if parent_def_id != local_id.to_def_id() {
-                                let parent_compartments = self.tcx.compartment_set(parent_def_id);
+                                let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                     eprintln!("DEBUG: parent_compartments for {:?}: {:?}", parent_def_id, parent_compartments.tags);
                                 }
@@ -327,7 +327,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
                     } else {
                         // Non-local def_id - use crate name as default when feature is active
-                        let def_compartments = self.tcx.compartment_set(def_id);
+                        let def_compartments = crate::compartment_set_with_default(self.tcx, def_id);
                         if def_compartments.tags.is_empty() || def_compartments.tags.len() == 1 && def_compartments.tags[0].as_str() == "Default" {
                             if self.tcx.compartments_enabled() {
                                 let crate_name = self.tcx.crate_name(def_id.krate);
