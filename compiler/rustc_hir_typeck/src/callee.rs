@@ -640,9 +640,14 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     );
                 }
 
+                // If the callee is in a trusted compartment, skip all argument checks.
+                // Trusted means the caller allows full interaction with that compartment.
+                let callee_is_trusted = fn_compartments.tags.iter()
+                    .any(|t| trusted.tags.contains(t));
+
                 for arg in arg_exprs {
                     let arg_compartments = self.find_compartments_in_expr(arg);
-                    if !arg_compartments.tags.is_empty() {
+                    if !arg_compartments.tags.is_empty() && !callee_is_trusted {
                         let untrusted = arg_compartments.tags.iter()
                             .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                             .collect::<Vec<_>>();

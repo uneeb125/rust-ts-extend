@@ -1818,6 +1818,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     eprintln!("DEBUG: Method call to {:?} with declared compartments: {:?}", method.def_id, fn_compartments.tags);
                 }
 
+                // If the method is in a trusted compartment, skip argument type checks
+                let callee_is_trusted = fn_compartments.tags.iter()
+                    .any(|t| trusted.tags.contains(t));
+
                 // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
                 for arg in args {
                     let arg_ty = self.typeck_results.borrow().expr_ty(arg);
@@ -1833,7 +1837,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
 
                         // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                        if self.tcx.compartments_enabled() && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                        if self.tcx.compartments_enabled() && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                             self.tcx.dcx().span_err(
                                 arg.span,
                                 format!(
