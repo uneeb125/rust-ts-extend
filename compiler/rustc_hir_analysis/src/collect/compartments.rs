@@ -2,7 +2,7 @@ use rustc_hir::def_id::DefId;
 use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::CompartmentMissing;
-use rustc_span::Symbol;
+use rustc_span::{Symbol, sym};
 
 /// Build the partition lookup key for a function.
 /// For impl methods, this replaces `{impl#0}` with the self type name
@@ -163,9 +163,14 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
             }
             
             // For #[automatically_derived] code (e.g., derive macros), inherit trusted
-            // compartments from self type.
+            // compartments from self type, plus always trust core/alloc/std since
+            // derive macros always call into them for formatting, cloning, etc.
             if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
                 if tcx.is_automatically_derived(impl_def_id) {
+                    // Start with stdlib crates that derive macros always need
+                    let mut trusted = vec![sym::core, sym::alloc, sym::std];
+
+                    // Also inherit any trusted compartments from the self type
                     if let Some(local_impl_id) = impl_def_id.as_local() {
                         let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
                         if let rustc_hir::Node::Item(rustc_hir::Item {
@@ -183,12 +188,17 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                                             | rustc_hir::def::DefKind::Enum
                                             | rustc_hir::def::DefKind::Union
                                     ) {
-                                        return trusted_compartments(tcx, adt_def_id);
+                                        for tag in trusted_compartments(tcx, adt_def_id).tags {
+                                            if !trusted.contains(&tag) {
+                                                trusted.push(tag);
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    return CompartmentSet::from_iter(trusted);
                 }
             }
             
