@@ -19,14 +19,20 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
             return;
         }
 
+        let caller_set = tcx.compartment_set(body.source.def_id());
+        if caller_set.is_empty() {
+            return;
+        }
+
+        let basic_blocks = body.basic_blocks.as_mut();
+
+        // Count calls for logging; full check injection coming in next iteration
         let mut call_count = 0;
-        for (bb, data) in body.basic_blocks.iter().enumerate() {
+        for (bb, data) in basic_blocks.iter().enumerate() {
             let Some(ref terminator) = data.terminator else { continue; };
-            if let TerminatorKind::Call { func, .. } = &terminator.kind {
+            if let TerminatorKind::Call { .. } = &terminator.kind {
                 call_count += 1;
-                debug!(
-                    "CheckCompartmentCalls: call in bb{bb} func={func:?}"
-                );
+                debug!("CheckCompartmentCalls: call in bb{bb}");
             }
         }
         debug!(
