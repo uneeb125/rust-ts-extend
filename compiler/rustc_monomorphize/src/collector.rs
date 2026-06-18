@@ -1235,6 +1235,7 @@ fn create_mono_items_for_vtable_methods<'tcx>(
                 VtblEntry::MetadataDropInPlace
                 | VtblEntry::MetadataSize
                 | VtblEntry::MetadataAlign
+                | VtblEntry::MetadataCompartmentArrayPtr
                 | VtblEntry::Vacant => None,
                 VtblEntry::TraitVPtr(_) => {
                     // all super trait items already covered, so skip them.

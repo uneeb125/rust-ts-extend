@@ -1501,8 +1501,11 @@ fn build_vtable_type_di_node<'ll, 'tcx>(
                         ty::VtblEntry::TraitVPtr(_) => {
                             (format!("__super_trait_ptr{index}"), void_pointer_type_di_node)
                         }
-                        ty::VtblEntry::MetadataAlign => ("align".to_string(), usize_di_node),
                         ty::VtblEntry::MetadataSize => ("size".to_string(), usize_di_node),
+                        ty::VtblEntry::MetadataAlign => ("align".to_string(), usize_di_node),
+                        ty::VtblEntry::MetadataCompartmentArrayPtr => {
+                            ("compartment_array_ptr".to_string(), void_pointer_type_di_node)
+                        }
                         ty::VtblEntry::Vacant => return None,
                     };
 

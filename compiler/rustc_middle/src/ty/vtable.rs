@@ -17,6 +17,8 @@ pub enum VtblEntry<'tcx> {
     MetadataSize,
     /// layout align of this type (used in vtable header)
     MetadataAlign,
+    /// pointer to per-method compartment array (used in vtable header)
+    MetadataCompartmentArrayPtr,
     /// non-dispatchable associated function that is excluded from trait object
     Vacant,
     /// dispatchable associated function
@@ -33,6 +35,7 @@ impl<'tcx> fmt::Debug for VtblEntry<'tcx> {
             VtblEntry::MetadataDropInPlace => write!(f, "MetadataDropInPlace"),
             VtblEntry::MetadataSize => write!(f, "MetadataSize"),
             VtblEntry::MetadataAlign => write!(f, "MetadataAlign"),
+            VtblEntry::MetadataCompartmentArrayPtr => write!(f, "MetadataCompartmentArrayPtr"),
             VtblEntry::Vacant => write!(f, "Vacant"),
             VtblEntry::Method(instance) => write!(f, "Method({instance})"),
             VtblEntry::TraitVPtr(trait_ref) => write!(f, "TraitVPtr({trait_ref})"),
@@ -43,12 +46,13 @@ impl<'tcx> fmt::Debug for VtblEntry<'tcx> {
 // Needs to be associated with the `'tcx` lifetime
 impl<'tcx> TyCtxt<'tcx> {
     pub const COMMON_VTABLE_ENTRIES: &'tcx [VtblEntry<'tcx>] =
-        &[VtblEntry::MetadataDropInPlace, VtblEntry::MetadataSize, VtblEntry::MetadataAlign];
+        &[VtblEntry::MetadataDropInPlace, VtblEntry::MetadataSize, VtblEntry::MetadataAlign, VtblEntry::MetadataCompartmentArrayPtr];
 }
 
 pub const COMMON_VTABLE_ENTRIES_DROPINPLACE: usize = 0;
 pub const COMMON_VTABLE_ENTRIES_SIZE: usize = 1;
 pub const COMMON_VTABLE_ENTRIES_ALIGN: usize = 2;
+pub const COMMON_VTABLE_ENTRIES_COMPARTMENT_ARRAY_PTR: usize = 3;
 
 // Note that we don't have access to a self type here, this has to be purely based on the trait (and
 // supertrait) definitions. That means we can't call into the same vtable_entries code since that
@@ -131,6 +135,10 @@ pub(super) fn vtable_allocation_provider<'tcx>(
             }
             VtblEntry::MetadataSize => Scalar::from_uint(size, ptr_size),
             VtblEntry::MetadataAlign => Scalar::from_uint(align, ptr_size),
+            VtblEntry::MetadataCompartmentArrayPtr => {
+                // T15a: placeholder — always null for now. T15b will build the actual array.
+                Scalar::from_maybe_pointer(Pointer::null(), &tcx)
+            }
             VtblEntry::Vacant => continue,
             VtblEntry::Method(instance) => {
                 // Prepare the fn ptr we write into the vtable.
