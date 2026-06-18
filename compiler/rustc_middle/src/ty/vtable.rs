@@ -1,9 +1,11 @@
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use rustc_ast::Mutability;
 use rustc_macros::HashStable;
 use rustc_type_ir::elaborate;
 
+use crate::compartments::CompartmentSet;
 use crate::mir::interpret::{
     AllocId, AllocInit, Allocation, CTFE_ALLOC_SALT, Pointer, Scalar, alloc_range,
 };
@@ -78,6 +80,17 @@ pub(crate) fn vtable_min_entries<'tcx>(
     count
 }
 
+/// Encode a `CompartmentSet` as a `u32` for storage in the vtable compartment array.
+/// Uses a deterministic hash so that equal sets always produce equal IDs.
+fn encode_compartment_set(set: &CompartmentSet) -> u32 {
+    if set.is_empty() || set.tags.is_empty() {
+        return 0;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    set.hash(&mut hasher);
+    (hasher.finish() & 0xFFFF_FFFF) as u32
+}
+
 /// Retrieves an allocation that represents the contents of a vtable.
 /// Since this is a query, allocations are cached and not duplicated.
 ///
@@ -116,6 +129,43 @@ pub(super) fn vtable_allocation_provider<'tcx>(
     let vtable_size = ptr_size * u64::try_from(vtable_entries.len()).unwrap();
     let mut vtable = Allocation::new(vtable_size, ptr_align, AllocInit::Uninit, ());
 
+    // Build the per-method compartment array before the main loop,
+    // since MetadataCompartmentArrayPtr (index 3) comes before Method entries.
+    let compartment_array_alloc: Option<AllocId> = {
+        let method_entries: Vec<_> = vtable_entries
+            .iter()
+            .filter_map(|e| match e {
+                VtblEntry::Method(instance) => Some(*instance),
+                _ => None,
+            })
+            .collect();
+
+        if method_entries.is_empty() {
+            None
+        } else {
+            let u32_size = rustc_abi::Size::from_bytes(4);
+            let u32_align = rustc_abi::Align::from_bytes(4).unwrap();
+            let array_size = u32_size * u64::try_from(method_entries.len()).unwrap();
+
+            let mut array = Allocation::new(array_size, u32_align, AllocInit::Uninit, ());
+
+            for (i, instance) in method_entries.iter().enumerate() {
+                let set = tcx.compartment_set(instance.def_id());
+                let id = encode_compartment_set(&set);
+                array
+                    .write_scalar(
+                        &tcx,
+                        alloc_range(u32_size * u64::try_from(i).unwrap(), u32_size),
+                        Scalar::from_uint(id, u32_size),
+                    )
+                    .expect("failed to write compartment array");
+            }
+
+            array.mutability = Mutability::Not;
+            Some(tcx.reserve_and_set_memory_alloc(tcx.mk_const_alloc(array)))
+        }
+    };
+
     // No need to do any alignment checks on the memory accesses below, because we know the
     // allocation is correctly aligned as we created it above. Also we're only offsetting by
     // multiples of `ptr_align`, which means that it will stay aligned to `ptr_align`.
@@ -136,8 +186,11 @@ pub(super) fn vtable_allocation_provider<'tcx>(
             VtblEntry::MetadataSize => Scalar::from_uint(size, ptr_size),
             VtblEntry::MetadataAlign => Scalar::from_uint(align, ptr_size),
             VtblEntry::MetadataCompartmentArrayPtr => {
-                // T15a: placeholder — always null for now. T15b will build the actual array.
-                Scalar::from_maybe_pointer(Pointer::null(), &tcx)
+                if let Some(alloc_id) = compartment_array_alloc {
+                    Scalar::from_pointer(Pointer::from(alloc_id), &tcx)
+                } else {
+                    Scalar::from_maybe_pointer(Pointer::null(), &tcx)
+                }
             }
             VtblEntry::Vacant => continue,
             VtblEntry::Method(instance) => {
