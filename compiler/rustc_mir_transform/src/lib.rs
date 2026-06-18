@@ -121,6 +121,7 @@ declare_passes! {
     mod check_call_recursion : CheckCallRecursion, CheckDropRecursion;
     mod check_inline_always_target_features: CheckInlineAlwaysTargetFeature;
     mod check_alignment : CheckAlignment;
+    mod check_compartment_calls : CheckCompartmentCalls;
     mod check_enums : CheckEnums;
     mod check_const_item_mutation : CheckConstItemMutation;
     mod check_null : CheckNull;
@@ -693,6 +694,7 @@ pub(crate) fn run_optimization_passes<'tcx>(tcx: TyCtxt<'tcx>, body: &mut Body<'
         tcx,
         body,
         &[
+            &check_compartment_calls::CheckCompartmentCalls,
             // Add some UB checks before any UB gets optimized away.
             &check_alignment::CheckAlignment,
             &check_null::CheckNull,
