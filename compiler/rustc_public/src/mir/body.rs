@@ -269,6 +269,7 @@ pub enum AssertMessage {
     ResumedAfterDrop(CoroutineKind),
     MisalignedPointerDereference { required: Operand, found: Operand },
     NullPointerDereference,
+    CompartmentViolation,
     InvalidEnumConstruction(Operand),
 }
 
@@ -342,6 +343,7 @@ impl AssertMessage {
                 Ok("misaligned pointer dereference")
             }
             AssertMessage::NullPointerDereference => Ok("null pointer dereference occurred"),
+            AssertMessage::CompartmentViolation => Ok("compartment violation"),
             AssertMessage::InvalidEnumConstruction(_) => {
                 Ok("trying to construct an enum from an invalid value")
             }

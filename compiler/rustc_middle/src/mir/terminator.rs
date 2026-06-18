@@ -208,6 +208,7 @@ impl<O> AssertKind<O> {
                 LangItem::PanicGenFnNonePanic
             }
             NullPointerDereference => LangItem::PanicNullPointerDereference,
+            CompartmentViolation => LangItem::PanicBoundsCheck, // placeholder — generic panic
             InvalidEnumConstruction(_) => LangItem::PanicInvalidEnumConstruction,
             ResumedAfterDrop(CoroutineKind::Coroutine(_)) => LangItem::PanicCoroutineResumedDrop,
             ResumedAfterDrop(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
@@ -285,6 +286,7 @@ impl<O> AssertKind<O> {
                 )
             }
             NullPointerDereference => write!(f, "\"null pointer dereference occurred\""),
+            CompartmentViolation => write!(f, "\"compartment violation: caller cannot access callee's compartments\""),
             InvalidEnumConstruction(source) => {
                 write!(f, "\"trying to construct an enum from an invalid value {{}}\", {source:?}")
             }
@@ -371,6 +373,7 @@ impl<O> AssertKind<O> {
                 middle_assert_coroutine_resume_after_panic
             }
             NullPointerDereference => middle_assert_null_ptr_deref,
+            CompartmentViolation => middle_assert_null_ptr_deref, // placeholder
             InvalidEnumConstruction(_) => middle_assert_invalid_enum_construction,
             ResumedAfterDrop(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
                 middle_assert_async_resume_after_drop
@@ -420,6 +423,7 @@ impl<O> AssertKind<O> {
             ResumedAfterReturn(_)
             | ResumedAfterPanic(_)
             | NullPointerDereference
+            | CompartmentViolation
             | ResumedAfterDrop(_) => {}
             MisalignedPointerDereference { required, found } => {
                 add!("required", format!("{required:#?}"));

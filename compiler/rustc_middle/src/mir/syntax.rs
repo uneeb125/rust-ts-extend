@@ -1074,6 +1074,7 @@ pub enum AssertKind<O> {
     ResumedAfterDrop(CoroutineKind),
     MisalignedPointerDereference { required: O, found: O },
     NullPointerDereference,
+    CompartmentViolation,
     InvalidEnumConstruction(O),
 }
 
