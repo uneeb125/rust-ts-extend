@@ -1079,6 +1079,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         // that extend for the duration of a call. Keep track of those allocations and their sizes
         // to generate `lifetime_end` when the call returns.
         let mut lifetime_ends_after_call: Vec<(Bx::Value, Size)> = Vec::new();
+        let mut vtable_meta: Option<Bx::Value> = None;
+        let mut vtable_idx: usize = 0;
         'make_args: for (i, arg) in first_args.iter().enumerate() {
             if kind == CallKind::Tail && matches!(fn_abi.args[i].mode, PassMode::Indirect { .. }) {
                 // FIXME: https://github.com/rust-lang/rust/pull/144232#discussion_r2218543841
@@ -1118,6 +1120,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             op.layout.ty,
                             fn_abi,
                         ));
+                        vtable_meta = Some(meta);
+                        vtable_idx = idx;
                         llargs.push(data_ptr);
                         continue 'make_args;
                     }
@@ -1129,6 +1133,8 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                             op.layout.ty,
                             fn_abi,
                         ));
+                        vtable_meta = Some(meta);
+                        vtable_idx = idx;
                         llargs.push(data_ptr);
                         continue;
                     }
@@ -1204,6 +1210,71 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             (_, Some(llfn)) => llfn,
             _ => span_bug!(fn_span, "no instance or llfn for call"),
         };
+
+        // Compartment runtime check for virtual calls.
+        // Loads callee's compartment from the vtable compartment array and
+        // compares with the caller's compile-time constant. Branches to abort on mismatch.
+        if let Some(meta) = vtable_meta {
+            if bx.cx().sess().compartment_runtime_checks() {
+                let caller_set = bx.tcx().compartment_set(self.instance.def_id());
+                if !caller_set.is_empty() {
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    caller_set.hash(&mut hasher);
+                    let caller_id: u32 = (hasher.finish() & 0xFFFF_FFFF) as u32;
+
+                    let ptr_size = bx.data_layout().pointer_size();
+                    // CompartmentArrayPtr is at vtable header index 3
+                    let array_ptr_offset = 3 * ptr_size.bytes();
+                    let ptr_align = bx.data_layout().pointer_align().abi;
+
+                    let ok_bb = bx.append_sibling_block("compartment_ok");
+                    let null_check_bb = bx.append_sibling_block("compartment_null_check");
+                    let load_bb = bx.append_sibling_block("compartment_load");
+                    let violation_bb = bx.append_sibling_block("compartment_violation");
+
+                    // Branch from current position to null_check
+                    bx.br(null_check_bb);
+                    bx.switch_to_block(null_check_bb);
+
+                    // Load CompartmentArrayPtr from vtable at offset 3 * ptr_size
+                    let gep = bx.inbounds_ptradd(meta, bx.const_usize(array_ptr_offset));
+                    let array_ptr = bx.load(bx.type_ptr(), gep, ptr_align);
+
+                    // Null check: if no compartment array, skip the check
+                    let null_ptr = bx.const_null(bx.type_ptr());
+                    let is_null = bx.icmp(IntPredicate::IntEQ, array_ptr, null_ptr);
+                    bx.cond_br(is_null, ok_bb, load_bb);
+
+                    // Load callee_id from array[vtable_idx]
+                    bx.switch_to_block(load_bb);
+                    let u32_offset = (vtable_idx as u64) * 4;
+                    let entry_gep = bx.inbounds_ptradd(array_ptr, bx.const_u32(u32_offset as u32));
+                    let callee_id = bx.load(
+                        bx.type_i32(),
+                        entry_gep,
+                        rustc_abi::Align::from_bytes(4).unwrap(),
+                    );
+
+                    // Compare callee compartment with caller's
+                    let matches = bx.icmp(
+                        IntPredicate::IntEQ,
+                        callee_id,
+                        bx.const_u32(caller_id),
+                    );
+                    bx.cond_br(matches, ok_bb, violation_bb);
+
+                    // Mismatch: abort
+                    bx.switch_to_block(violation_bb);
+                    bx.abort();
+                    bx.unreachable();
+
+                    // Continue in ok_bb
+                    bx.switch_to_block(ok_bb);
+                }
+            }
+        }
+
         self.set_debug_loc(bx, source_info);
         helper.do_call(
             self,
