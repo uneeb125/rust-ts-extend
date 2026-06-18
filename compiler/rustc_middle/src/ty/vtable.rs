@@ -129,29 +129,29 @@ pub(super) fn vtable_allocation_provider<'tcx>(
     let vtable_size = ptr_size * u64::try_from(vtable_entries.len()).unwrap();
     let mut vtable = Allocation::new(vtable_size, ptr_align, AllocInit::Uninit, ());
 
-    // Build the per-method compartment array before the main loop,
+    // Build the per-slot compartment array before the main loop,
     // since MetadataCompartmentArrayPtr (index 3) comes before Method entries.
+    // Array has same length as vtable entries so we can index by vtable slot.
     let compartment_array_alloc: Option<AllocId> = {
-        let method_entries: Vec<_> = vtable_entries
-            .iter()
-            .filter_map(|e| match e {
-                VtblEntry::Method(instance) => Some(*instance),
-                _ => None,
-            })
-            .collect();
+        let has_methods = vtable_entries.iter().any(|e| matches!(e, VtblEntry::Method(_)));
 
-        if method_entries.is_empty() {
+        if !has_methods {
             None
         } else {
             let u32_size = rustc_abi::Size::from_bytes(4);
             let u32_align = rustc_abi::Align::from_bytes(4).unwrap();
-            let array_size = u32_size * u64::try_from(method_entries.len()).unwrap();
+            let array_size = u32_size * u64::try_from(vtable_entries.len()).unwrap();
 
             let mut array = Allocation::new(array_size, u32_align, AllocInit::Uninit, ());
 
-            for (i, instance) in method_entries.iter().enumerate() {
-                let set = tcx.compartment_set(instance.def_id());
-                let id = encode_compartment_set(&set);
+            for (i, entry) in vtable_entries.iter().enumerate() {
+                let id = match entry {
+                    VtblEntry::Method(instance) => {
+                        let set = tcx.compartment_set(instance.def_id());
+                        encode_compartment_set(&set)
+                    }
+                    _ => 0u32, // non-method entries (header, Vacant, TraitVPtr) → 0
+                };
                 array
                     .write_scalar(
                         &tcx,
