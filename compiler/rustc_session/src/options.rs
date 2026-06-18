@@ -2259,6 +2259,8 @@ options! {
     compartment_missing: CompartmentMissing = (CompartmentMissing::Skip, parse_compartment_missing, [UNTRACKED],
         "behavior for functions not found in the partition file: `skip` (use default), \
          `error` (emit error), `warn` (warn and use default) (default: skip)"),
+    compartment_runtime_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
+        "enable runtime compartment enforcement for dynamic dispatch (default: off)"),
     contract_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "emit runtime checks for contract pre- and post-conditions (default: no)"),
     coverage_options: CoverageOptions = (CoverageOptions::default(), parse_coverage_options, [TRACKED],

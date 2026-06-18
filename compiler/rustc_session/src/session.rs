@@ -701,6 +701,10 @@ impl Session {
         self.opts.unstable_opts.ub_checks.unwrap_or(self.opts.debug_assertions)
     }
 
+    pub fn compartment_runtime_checks(&self) -> bool {
+        self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false)
+    }
+
     pub fn contract_checks(&self) -> bool {
         self.opts.unstable_opts.contract_checks.unwrap_or(false)
     }
