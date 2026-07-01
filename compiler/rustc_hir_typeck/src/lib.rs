@@ -95,10 +95,16 @@ fn used_trait_imports(tcx: TyCtxt<'_>, def_id: LocalDefId) -> &UnordSet<LocalDef
 /// so callers during typeck need this wrapper to get the correct compartment.
 fn compartment_set_with_default(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
     let cs = tcx.compartment_set(def_id);
-    if cs.tags.is_empty() && tcx.compartments_enabled() {
-        let crate_name = tcx.crate_name(def_id.krate);
-        let crate_compartment = rustc_span::Symbol::intern(&crate_name.as_str());
-        CompartmentSet { tags: vec![crate_compartment] }
+    if cs.tags.is_empty() {
+        if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
+            let crate_name = tcx.crate_name(def_id.krate);
+            let crate_compartment = rustc_span::Symbol::intern(&crate_name.as_str());
+            CompartmentSet { tags: vec![crate_compartment] }
+        } else if tcx.compartments_enabled() {
+            CompartmentSet::default()
+        } else {
+            CompartmentSet::empty()
+        }
     } else {
         cs.clone()
     }
