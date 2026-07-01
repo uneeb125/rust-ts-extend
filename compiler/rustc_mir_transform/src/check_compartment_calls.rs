@@ -1,8 +1,11 @@
+use rustc_hir::def_id::DefId;
 use rustc_index::IndexVec;
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_session::Session;
+use rustc_span::source_map::Spanned;
+use rustc_span::Span;
 use tracing::debug;
 
 use crate::check_pointers::{
@@ -42,6 +45,9 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
             body.span,
         );
 
+        let saved_local = insert_tls_prologue(tcx, body, caller_id);
+        insert_tls_epilogue(tcx, body, saved_local);
+
         let excluded_pointees: &[Ty<'tcx>] = &[];
 
         check_pointers(
@@ -67,6 +73,138 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
             body.source.def_id()
         );
     }
+}
+
+fn insert_tls_prologue<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mut Body<'tcx>,
+    caller_id: u32,
+) -> Local {
+    let source_info = SourceInfo::outermost(body.span);
+
+    let saved_local = body.local_decls.push(
+        LocalDecl::with_source_info(tcx.types.u32, source_info)
+    ).into();
+    let saved_place = Place::from(saved_local);
+
+    let read_fn = match tcx.lang_items().compartment_read_tls() {
+        Some(def_id) => def_id,
+        None => return saved_local,
+    };
+
+    let set_fn = match tcx.lang_items().compartment_set_tls() {
+        Some(def_id) => def_id,
+        None => return saved_local,
+    };
+
+    let basic_blocks = body.basic_blocks.as_mut();
+
+    // Split START_BLOCK: move all statements + terminator to body_bb.
+    // START_BLOCK becomes: read_tls -> read_bb
+    // read_bb: set_tls -> body_bb
+    // body_bb: original statements + terminator
+    let body_bb = split_after_n(basic_blocks, START_BLOCK, 0);
+
+    let read_bb = push_block(basic_blocks);
+    basic_blocks[START_BLOCK].terminator = Some(call_terminator(
+        tcx, read_fn, &[], saved_place, Some(read_bb), source_info, body.span,
+    ));
+
+    let caller_op = Operand::const_from_scalar(
+        tcx, tcx.types.u32, Scalar::from_u32(caller_id), body.span,
+    );
+
+    let ret_place = Place::from(RETURN_PLACE);
+    basic_blocks[read_bb].terminator = Some(call_terminator(
+        tcx, set_fn, &[Spanned { node: caller_op, span: body.span }],
+        ret_place, Some(body_bb), source_info, body.span,
+    ));
+
+    saved_local
+}
+
+fn insert_tls_epilogue<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mut Body<'tcx>,
+    saved_local: Local,
+) {
+    let Some(set_fn) = tcx.lang_items().compartment_set_tls() else {
+        return;
+    };
+
+    let source_info = SourceInfo::outermost(body.span);
+    let saved_op = Operand::Copy(Place::from(saved_local));
+    let ret_place = Place::from(RETURN_PLACE);
+
+    let basic_blocks = body.basic_blocks.as_mut();
+    let num_blocks = basic_blocks.len();
+    for bb in (0..num_blocks).rev() {
+        let block = BasicBlock::from_usize(bb);
+        let block_data = &basic_blocks[block];
+
+        if block_data.is_cleanup {
+            continue;
+        }
+
+        let is_exit = match block_data.terminator.as_ref().map(|t| &t.kind) {
+            Some(TerminatorKind::Return) => true,
+            _ => false,
+        };
+        if !is_exit {
+            continue;
+        }
+
+        let stmts_len = basic_blocks[block].statements.len();
+        let original_bb = split_after_n(basic_blocks, block, stmts_len);
+
+        basic_blocks[block].terminator = Some(call_terminator(
+            tcx, set_fn, &[Spanned { node: saved_op.clone(), span: body.span }],
+            ret_place, Some(original_bb), source_info, body.span,
+        ));
+    }
+}
+
+fn call_terminator<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    args: &[Spanned<Operand<'tcx>>],
+    destination: Place<'tcx>,
+    target: Option<BasicBlock>,
+    source_info: SourceInfo,
+    fn_span: Span,
+) -> Terminator<'tcx> {
+    Terminator {
+        source_info,
+        kind: TerminatorKind::Call {
+            func: Operand::function_handle(tcx, def_id, [], fn_span),
+            args: args.into(),
+            destination,
+            target,
+            unwind: UnwindAction::Continue,
+            fn_span,
+            call_source: CallSource::Misc,
+        },
+    }
+}
+
+fn split_after_n(
+    basic_blocks: &mut IndexVec<BasicBlock, BasicBlockData<'_>>,
+    block: BasicBlock,
+    n: usize,
+) -> BasicBlock {
+    let block_data = &mut basic_blocks[block];
+    let new_block = BasicBlockData::new_stmts(
+        block_data.statements.split_off(n),
+        block_data.terminator.take(),
+        block_data.is_cleanup,
+    );
+    basic_blocks.push(new_block)
+}
+
+fn push_block(
+    basic_blocks: &mut IndexVec<BasicBlock, BasicBlockData<'_>>,
+) -> BasicBlock {
+    basic_blocks.push(BasicBlockData::new(None, false))
 }
 
 fn make_compartment_check<'tcx>(

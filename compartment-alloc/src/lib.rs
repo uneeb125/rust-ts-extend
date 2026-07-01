@@ -42,11 +42,13 @@ pub fn last_checked_tag() -> u32 {
     LAST_CHECKED_TAG.with(|c| c.get())
 }
 
+#[lang = "compartment_read_tls"]
 #[no_mangle]
 pub extern "Rust" fn __compartment_read_tls() -> u32 {
     current_compartment()
 }
 
+#[lang = "compartment_set_tls"]
 #[no_mangle]
 pub extern "Rust" fn __compartment_set_tls(tag: u32) {
     set_current_compartment(tag);
