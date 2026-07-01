@@ -82,7 +82,7 @@ pub(crate) fn vtable_min_entries<'tcx>(
 
 /// Encode a `CompartmentSet` as a `u32` for storage in the vtable compartment array.
 /// Uses a deterministic hash so that equal sets always produce equal IDs.
-fn encode_compartment_set(set: &CompartmentSet) -> u32 {
+pub fn encode_compartment_set(set: &CompartmentSet) -> u32 {
     if set.is_empty() || set.tags.is_empty() {
         return 0;
     }
