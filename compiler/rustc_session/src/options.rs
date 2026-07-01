@@ -2256,6 +2256,9 @@ options! {
         "globally enable the compartment system without needing #![feature(compartments)] (default: no)"),
     compartment_file: Option<PathBuf> = (None, parse_opt_pathbuf, [TRACKED],
         "load compartment assignments from a JSON partition file (default: none)"),
+    compartment_crate_default: bool = (false, parse_bool, [TRACKED],
+        "use the crate name as the default compartment for items without explicit \
+         #[compartments(..)] annotations (default: no)"),
     compartment_missing: CompartmentMissing = (CompartmentMissing::Skip, parse_compartment_missing, [UNTRACKED],
         "behavior for functions not found in the partition file: `skip` (use default), \
          `error` (emit error), `warn` (warn and use default) (default: skip)"),

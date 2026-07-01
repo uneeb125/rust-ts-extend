@@ -354,7 +354,7 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
                 println!("DEBUG: impl_of_assoc for {:?} -> {:?}, is_automatically_derived={}", tcx.def_path_str(def_id), tcx.def_path_str(impl_def_id), is_derived);
             }
             if is_derived {
-                if tcx.compartments_enabled() {
+                if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
                     let crate_name = tcx.crate_name(def_id.krate);
                     let crate_compartment = Symbol::intern(&crate_name.as_str());
                     return CompartmentSet { tags: vec![crate_compartment] };
@@ -378,8 +378,10 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
             return partition_compartments;
         }
 
-        // Use crate name as default when feature is active
-        if tcx.compartments_enabled() {
+        // Use crate name as default when the crate opts in via #![feature(compartments)]
+        // or the -Z compartment-crate-default flag is set. The -Z compartments flag
+        // alone enables checks but does not apply the default.
+        if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
             let crate_name = tcx.crate_name(def_id.krate);
             let crate_compartment = Symbol::intern(&crate_name.as_str());
             return CompartmentSet { tags: vec![crate_compartment] };

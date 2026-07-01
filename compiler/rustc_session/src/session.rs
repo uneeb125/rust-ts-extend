@@ -705,6 +705,10 @@ impl Session {
         self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false)
     }
 
+    pub fn compartment_crate_default(&self) -> bool {
+        self.opts.unstable_opts.compartment_crate_default
+    }
+
     pub fn contract_checks(&self) -> bool {
         self.opts.unstable_opts.contract_checks.unwrap_or(false)
     }
