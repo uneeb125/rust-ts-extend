@@ -207,6 +207,8 @@ symbols! {
         Compartments,
         compartments,
         trusted_compartments,
+        compartment_read_tls,
+        compartment_set_tls,
         Clone,
         CoercePointee,
         CoercePointeeValidated,
