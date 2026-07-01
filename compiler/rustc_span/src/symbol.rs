@@ -1614,6 +1614,7 @@ symbols! {
         panic_abort,
         panic_any,
         panic_bounds_check,
+        panic_compartment_violation,
         panic_cannot_unwind,
         panic_const_add_overflow,
         panic_const_async_fn_resumed,

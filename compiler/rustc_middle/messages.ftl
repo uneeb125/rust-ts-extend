@@ -26,6 +26,9 @@ middle_assert_misaligned_ptr_deref =
 middle_assert_null_ptr_deref =
     null pointer dereference occurred
 
+middle_assert_compartment_violation =
+    compartment violation: memory access across compartment boundary
+
 middle_assert_op_overflow =
     attempt to compute `{$left} {$op} {$right}`, which would overflow
 

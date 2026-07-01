@@ -208,7 +208,7 @@ impl<O> AssertKind<O> {
                 LangItem::PanicGenFnNonePanic
             }
             NullPointerDereference => LangItem::PanicNullPointerDereference,
-            CompartmentViolation => LangItem::PanicBoundsCheck, // placeholder — generic panic
+            CompartmentViolation => LangItem::PanicCompartmentViolation,
             InvalidEnumConstruction(_) => LangItem::PanicInvalidEnumConstruction,
             ResumedAfterDrop(CoroutineKind::Coroutine(_)) => LangItem::PanicCoroutineResumedDrop,
             ResumedAfterDrop(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
@@ -373,7 +373,7 @@ impl<O> AssertKind<O> {
                 middle_assert_coroutine_resume_after_panic
             }
             NullPointerDereference => middle_assert_null_ptr_deref,
-            CompartmentViolation => middle_assert_null_ptr_deref, // placeholder
+            CompartmentViolation => middle_assert_compartment_violation,
             InvalidEnumConstruction(_) => middle_assert_invalid_enum_construction,
             ResumedAfterDrop(CoroutineKind::Desugared(CoroutineDesugaring::Async, _)) => {
                 middle_assert_async_resume_after_drop

@@ -318,6 +318,7 @@ language_item_table! {
     PanicGenFnNonePanic, sym::panic_const_gen_fn_none_panic, panic_const_gen_fn_none_panic, Target::Fn, GenericRequirement::None;
     PanicNullPointerDereference, sym::panic_null_pointer_dereference, panic_null_pointer_dereference, Target::Fn, GenericRequirement::None;
     PanicInvalidEnumConstruction, sym::panic_invalid_enum_construction, panic_invalid_enum_construction, Target::Fn, GenericRequirement::None;
+    PanicCompartmentViolation,  sym::panic_compartment_violation,   panic_compartment_violation,    Target::Fn,             GenericRequirement::None;
     CompartmentReadTls,      sym::compartment_read_tls,  compartment_read_tls,       Target::Fn,             GenericRequirement::None;
     CompartmentSetTls,       sym::compartment_set_tls,   compartment_set_tls,        Target::Fn,             GenericRequirement::None;
     PanicCoroutineResumedDrop, sym::panic_const_coroutine_resumed_drop, panic_const_coroutine_resumed_drop, Target::Fn, GenericRequirement::None;
