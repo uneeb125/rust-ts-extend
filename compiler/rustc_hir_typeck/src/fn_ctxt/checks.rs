@@ -107,9 +107,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
         // Otherwise look in sub-expressions
         match &expr.kind {
-            hir::ExprKind::Cast(_, ty) => {
-                // Cast expression - get compartments from Ty
-                CompartmentSet::from_iter(ty.compartments.iter().map(|ident| ident.name))
+            hir::ExprKind::Cast(source, ty) => {
+                // Cast expression - prefer explicit compartments on target type,
+                // fall back to compartments from source expression
+                let from_type = CompartmentSet::from_iter(
+                    ty.compartments.iter().map(|ident| ident.name)
+                );
+                if !from_type.tags.is_empty() {
+                    return from_type;
+                }
+                return self.find_compartments_in_expr(source);
             }
             hir::ExprKind::CompartmentCast(_, idents) => {
                 // CompartmentCast - get compartments directly from expression
@@ -1295,11 +1302,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             // Get compartments from initializer (cast or node_compartments)
             let mut init_compartments = CompartmentSet::default();
-            if let hir::ExprKind::Cast(_, ty) = &init.kind {
-                // Cast expression - get compartments from Ty
+            if let hir::ExprKind::Cast(source, ty) = &init.kind {
+                // Cast expression - prefer explicit compartments on target type,
+                // fall back to compartments from source expression
                 init_compartments = CompartmentSet::from_iter(
                     ty.compartments.iter().map(|ident| ident.name)
                 );
+                if init_compartments.tags.is_empty() {
+                    init_compartments = self.find_compartments_in_expr(source);
+                }
             } else if let hir::ExprKind::CompartmentCast(_, idents) = &init.kind {
                 // CompartmentCast expression - get compartments directly
                 init_compartments = CompartmentSet::from_iter(
