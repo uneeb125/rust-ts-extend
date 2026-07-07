@@ -647,7 +647,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
                 for arg in arg_exprs {
                     let arg_compartments = self.find_compartments_in_expr(arg);
-                    if !arg_compartments.tags.is_empty() && !callee_is_trusted {
+                    if !bypass && !arg_compartments.tags.is_empty() && !callee_is_trusted {
                         let untrusted = arg_compartments.tags.iter()
                             .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                             .collect::<Vec<_>>();
