@@ -266,6 +266,32 @@ pub(super) fn is_inside_unsafe_context(tcx: TyCtxt<'_>, hir_id: hir::HirId) -> b
     false
 }
 
+/// Returns true if the expression is inside a `crosscomp { ... }` block.
+/// Does NOT match regular `unsafe { }` blocks or `unsafe fn` items.
+pub(super) fn is_inside_compartment_unsafe_context(
+    tcx: TyCtxt<'_>,
+    hir_id: hir::HirId,
+) -> bool {
+    for (_, node) in tcx.hir_parent_iter(hir_id) {
+        match node {
+            hir::Node::Block(block)
+                if matches!(
+                    block.rules,
+                    hir::BlockCheckMode::CompartmentUnsafeBlock(_)
+                ) =>
+            {
+                return true;
+            }
+            hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => {
+                return false;
+            }
+            hir::Node::Item(_) => return false,
+            _ => continue,
+        }
+    }
+    false
+}
+
 impl<'a, 'tcx> CastCheck<'tcx> {
     pub(crate) fn new(
         fcx: &FnCtxt<'a, 'tcx>,

@@ -38,7 +38,6 @@ use crate::inline_asm::InlineAsmCtxt;
 use crate::method::probe::IsSuggestion;
 use crate::method::probe::Mode::MethodCall;
 use crate::method::probe::ProbeScope::TraitsInScope;
-use crate::cast::is_inside_unsafe_context;
 use crate::{
     BreakableCtxt, Diverges, Expectation, FnCtxt, GatherLocalsVisitor, LoweredTy, Needs,
     TupleArgumentsFlag, errors, struct_span_code_err,
@@ -1322,15 +1321,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
 
             // Check if initializer's compartments are accessible from current scope
-            // Skip check if let statement is inside unsafe block
-            let is_unsafe = is_inside_unsafe_context(self.tcx, decl.hir_id);
+            // Skip check if let statement is inside crosscomp block
+            let bypass = crate::cast::is_inside_compartment_unsafe_context(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
 
             // Get trusted compartments for the current context
             let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if self.tcx.compartments_enabled() && !is_unsafe && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
+            if self.tcx.compartments_enabled() && !bypass && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
                 self.tcx.dcx().span_err(
                     init.span,
                     format!(

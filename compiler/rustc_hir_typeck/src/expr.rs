@@ -55,7 +55,7 @@ use crate::{
     TupleArgumentsFlag, cast, fatally_break_rust, report_unexpected_variant_res, type_error_struct,
 };
 
-use crate::cast::is_inside_unsafe_context;
+use crate::cast::is_inside_compartment_unsafe_context;
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub(crate) fn precedence(&self, expr: &hir::Expr<'_>) -> ExprPrecedence {
@@ -602,11 +602,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     expr.hir_id,
                     compartments.clone(),
                 );
-                // CompartmentCast requires unsafe
-                if self.tcx.compartments_enabled() && !compartments.is_empty() && !is_inside_unsafe_context(self.tcx, expr.hir_id) {
+                // CompartmentCast requires crosscomp block
+                if self.tcx.compartments_enabled() && !compartments.is_empty() && !crate::cast::is_inside_compartment_unsafe_context(self.tcx, expr.hir_id) {
                     self.tcx.dcx().span_err(
                         expr.span,
-                        "compartment cast requires an `unsafe` block",
+                        "compartment cast requires a `crosscomp` block",
                     );
                 }
                 ty
@@ -1521,10 +1521,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
         let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-        // Check if assignment is inside unsafe block
-        let is_unsafe = is_inside_unsafe_context(self.tcx, expr.hir_id);
+        // Check if assignment is inside crosscomp block
+        let bypass = is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
 
-        if self.tcx.compartments_enabled() && !is_unsafe && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
+        if self.tcx.compartments_enabled() && !bypass && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
             self.tcx.dcx().span_err(
                 rhs.span,
                 format!(
