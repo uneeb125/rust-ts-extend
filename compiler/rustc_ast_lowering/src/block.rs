@@ -120,6 +120,9 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
             BlockCheckMode::Unsafe(u) => {
                 hir::BlockCheckMode::UnsafeBlock(self.lower_unsafe_source(u))
             }
+            BlockCheckMode::CompartmentUnsafe(u) => {
+                hir::BlockCheckMode::CompartmentUnsafeBlock(self.lower_unsafe_source(u))
+            }
         }
     }
 }

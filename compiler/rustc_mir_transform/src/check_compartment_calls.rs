@@ -45,8 +45,14 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
             body.span,
         );
 
-        let saved_local = insert_tls_prologue(tcx, body, caller_id);
-        insert_tls_epilogue(tcx, body, saved_local);
+        // [Default] means unrestricted — skip TLS to avoid overwriting
+        // the caller's compartment during stdlib allocation chains.
+        let default_only = caller_set.tags.len() == 1
+            && caller_set.tags[0] == rustc_span::sym::Default;
+        if !default_only {
+            let saved_local = insert_tls_prologue(tcx, body, caller_id);
+            insert_tls_epilogue(tcx, body, saved_local);
+        }
 
         let excluded_pointees: &[Ty<'tcx>] = &[];
 
@@ -114,10 +120,13 @@ fn insert_tls_prologue<'tcx>(
         tcx, tcx.types.u32, Scalar::from_u32(caller_id), body.span,
     );
 
-    let ret_place = Place::from(RETURN_PLACE);
+    let unit_local = body.local_decls.push(
+        LocalDecl::with_source_info(tcx.types.unit, source_info)
+    );
+    let discard_place = Place::from(unit_local);
     basic_blocks[read_bb].terminator = Some(call_terminator(
         tcx, set_fn, &[Spanned { node: caller_op, span: body.span }],
-        ret_place, Some(body_bb), source_info, body.span,
+        discard_place, Some(body_bb), source_info, body.span,
     ));
 
     saved_local
@@ -134,7 +143,10 @@ fn insert_tls_epilogue<'tcx>(
 
     let source_info = SourceInfo::outermost(body.span);
     let saved_op = Operand::Copy(Place::from(saved_local));
-    let ret_place = Place::from(RETURN_PLACE);
+    let unit_local = body.local_decls.push(
+        LocalDecl::with_source_info(tcx.types.unit, source_info)
+    );
+    let discard_place = Place::from(unit_local);
 
     let basic_blocks = body.basic_blocks.as_mut();
     let num_blocks = basic_blocks.len();
@@ -159,7 +171,7 @@ fn insert_tls_epilogue<'tcx>(
 
         basic_blocks[block].terminator = Some(call_terminator(
             tcx, set_fn, &[Spanned { node: saved_op.clone(), span: body.span }],
-            ret_place, Some(original_bb), source_info, body.span,
+            discard_place, Some(original_bb), source_info, body.span,
         ));
     }
 }

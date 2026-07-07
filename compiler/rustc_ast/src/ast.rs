@@ -1339,6 +1339,7 @@ pub struct ExprField {
 pub enum BlockCheckMode {
     Default,
     Unsafe(UnsafeSource),
+    CompartmentUnsafe(UnsafeSource),
 }
 
 #[derive(Clone, PartialEq, Encodable, Decodable, Debug, Copy, Walkable)]

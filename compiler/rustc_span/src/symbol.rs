@@ -131,6 +131,7 @@ symbols! {
         Compas:             "compas",
         ContractEnsures:    "contract_ensures",
         ContractRequires:   "contract_requires",
+        Crosscomp:          "crosscomp",
         Default:            "default",
         Malformed:          "malformed",
         MacroRules:         "macro_rules",

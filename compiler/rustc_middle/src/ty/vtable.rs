@@ -1,5 +1,4 @@
 use std::fmt;
-use std::hash::{Hash, Hasher};
 
 use rustc_ast::Mutability;
 use rustc_macros::HashStable;
@@ -86,9 +85,19 @@ pub fn encode_compartment_set(set: &CompartmentSet) -> u32 {
     if set.is_empty() || set.tags.is_empty() {
         return 0;
     }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    set.hash(&mut hasher);
-    (hasher.finish() & 0xFFFF_FFFF) as u32
+    // Deterministic hash of sorted compartment names — must match
+    // the runtime `compartment_alloc::encode_compartment_set`.
+    let mut names: Vec<&str> = set.tags.iter().map(|s| s.as_str()).collect();
+    names.sort();
+    names.dedup();
+    let mut h: u32 = 0x811C9DC5;
+    for name in &names {
+        for &b in name.as_bytes() {
+            h = h.wrapping_mul(0x01000193).wrapping_add(b as u32);
+        }
+        h = h.wrapping_mul(0x01000193).wrapping_add(0xFF);
+    }
+    h & 0x7FFF_FFFF
 }
 
 /// Retrieves an allocation that represents the contents of a vtable.

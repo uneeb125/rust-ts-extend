@@ -1055,6 +1055,7 @@ impl<'a> State<'a> {
     ) {
         match blk.rules {
             hir::BlockCheckMode::UnsafeBlock(..) => self.word_space("unsafe"),
+            hir::BlockCheckMode::CompartmentUnsafeBlock(..) => self.word_space("crosscomp"),
             hir::BlockCheckMode::DefaultBlock => (),
         }
         self.maybe_print_comment(blk.span.lo());

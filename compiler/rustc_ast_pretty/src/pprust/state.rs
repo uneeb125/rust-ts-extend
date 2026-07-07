@@ -1500,6 +1500,7 @@ impl<'a> State<'a> {
     ) {
         match blk.rules {
             BlockCheckMode::Unsafe(..) => self.word_space("unsafe"),
+            BlockCheckMode::CompartmentUnsafe(..) => self.word_space("crosscomp"),
             BlockCheckMode::Default => (),
         }
         self.maybe_print_comment(blk.span.lo());

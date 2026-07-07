@@ -1592,6 +1592,16 @@ impl<'a> Parser<'a> {
                         err
                     },
                 )
+            } else if this.eat_keyword_noexpect(kw::Crosscomp) {
+                this.parse_expr_block(
+                    None,
+                    lo,
+                    BlockCheckMode::CompartmentUnsafe(ast::UserProvided),
+                )
+                .map_err(|mut err| {
+                    err.span_label(lo, "while parsing this `crosscomp` expression");
+                    err
+                })
             } else if this.check_inline_const(0) {
                 this.parse_const_block(lo, false)
             } else if this.may_recover() && this.is_do_catch_block() {

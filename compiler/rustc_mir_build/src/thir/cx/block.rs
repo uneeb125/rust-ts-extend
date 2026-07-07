@@ -31,6 +31,7 @@ impl<'tcx> ThirBuildCx<'tcx> {
                 hir::BlockCheckMode::UnsafeBlock(hir::UnsafeSource::UserProvided) => {
                     BlockSafety::ExplicitUnsafe(block.hir_id)
                 }
+                hir::BlockCheckMode::CompartmentUnsafeBlock(_) => BlockSafety::Safe,
             },
         };
 
