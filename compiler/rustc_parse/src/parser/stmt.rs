@@ -121,6 +121,19 @@ impl<'a> Parser<'a> {
                 errors::InvalidVariableDeclarationSub::UseLetNotVar,
                 force_collect,
             )?
+        } else if self.token.is_keyword(kw::Crosscomp) {
+            self.bump();
+            let e = self.collect_tokens(
+                Some(pre_attr_pos),
+                AttrWrapper::empty(),
+                force_collect,
+                |this, _empty_attrs| {
+                    let lo = this.prev_token.span;
+                    let blk = this.parse_expr_block(None, lo, BlockCheckMode::CompartmentUnsafe(ast::UserProvided))?;
+                    Ok((blk, Trailing::No, UsePreAttrPos::Yes))
+                },
+            )?;
+            self.mk_stmt(lo.to(e.span), StmtKind::Expr(e))
         } else if self.check_path()
             && !self.token.is_qpath_start()
             && !self.is_path_start_item()

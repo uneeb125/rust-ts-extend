@@ -1552,7 +1552,8 @@ impl<'a> Parser<'a> {
                 })
             } else if this.check(exp!(OpenBracket)) {
                 this.parse_expr_array_or_repeat(exp!(CloseBracket))
-            } else if this.eat_keyword_noexpect(kw::Crosscomp) {
+            } else if this.token.is_keyword(kw::Crosscomp) {
+                this.bump();
                 this.parse_expr_block(
                     None,
                     lo,
