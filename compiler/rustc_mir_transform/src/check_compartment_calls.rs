@@ -1,8 +1,10 @@
 use rustc_hir::def_id::DefId;
 use rustc_index::IndexVec;
+use rustc_middle::compartments::CompartmentSet;
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::*;
-use rustc_middle::ty::{Ty, TyCtxt};
+use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_session::Session;
 use rustc_span::source_map::Spanned;
 use rustc_span::Span;
@@ -73,6 +75,8 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
             },
             BorrowedFieldProjectionMode::NoFollowProjections,
         );
+
+        insert_fnptr_creation_checks(tcx, body, &caller_set, caller_const.clone());
 
         debug!(
             "CheckCompartmentCalls: instrumented {:?} (compartment {caller_id:08X})",
@@ -293,4 +297,96 @@ fn push_temp<'tcx>(
         StatementKind::Assign(Box::new((local, rvalue))),
     ));
     local
+}
+
+fn insert_fnptr_creation_checks<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mut Body<'tcx>,
+    caller_set: &CompartmentSet,
+    caller_const: Operand<'tcx>,
+) {
+    let basic_blocks = body.basic_blocks.as_mut();
+    let local_decls = &mut body.local_decls;
+
+    for block in basic_blocks.indices().rev() {
+        for stmt_idx in (0..basic_blocks[block].statements.len()).rev() {
+            let stmt = &basic_blocks[block].statements[stmt_idx];
+            let source_info = stmt.source_info;
+
+            let callee_def_id = match &stmt.kind {
+                StatementKind::Assign(box (_, Rvalue::Cast(
+                    CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer, _),
+                    operand,
+                    _,
+                ))) => match operand.ty(local_decls, tcx).kind() {
+                    ty::FnDef(def_id, _) => Some(*def_id),
+                    _ => None,
+                },
+                _ => None,
+            };
+
+            let Some(callee_def_id) = callee_def_id else { continue };
+
+            let callee_set = tcx.compartment_set(callee_def_id);
+            if callee_set.is_empty() || callee_set.is_sudo() {
+                continue;
+            }
+
+            let callee_id = rustc_middle::ty::vtable::encode_compartment_set(&callee_set);
+            if callee_id == 0 {
+                continue;
+            }
+
+            let caller_id = rustc_middle::ty::vtable::encode_compartment_set(caller_set);
+            if caller_id == callee_id {
+                continue;
+            }
+
+            let location = Location { block, statement_index: stmt_idx };
+            let new_block = split_block(basic_blocks, location);
+
+            let callee_const = Operand::const_from_scalar(
+                tcx,
+                tcx.types.u32,
+                Scalar::from_u32(callee_id),
+                source_info.span,
+            );
+
+            let cond = push_temp(
+                local_decls,
+                &mut basic_blocks[block].statements,
+                source_info,
+                Rvalue::BinaryOp(
+                    BinOp::Eq,
+                    Box::new((callee_const, caller_const.clone())),
+                ),
+                tcx.types.bool,
+            );
+
+            let block_data = &mut basic_blocks[block];
+            block_data.terminator = Some(Terminator {
+                source_info,
+                kind: TerminatorKind::Assert {
+                    cond: Operand::Copy(cond),
+                    expected: true,
+                    target: new_block,
+                    msg: Box::new(AssertKind::CompartmentViolation),
+                    unwind: UnwindAction::Unreachable,
+                },
+            });
+        }
+    }
+}
+
+fn split_block(
+    basic_blocks: &mut IndexVec<BasicBlock, BasicBlockData<'_>>,
+    location: Location,
+) -> BasicBlock {
+    let block_data = &mut basic_blocks[location.block];
+    let new_block = BasicBlockData::new_stmts(
+        block_data.statements.split_off(location.statement_index),
+        block_data.terminator.take(),
+        block_data.is_cleanup,
+    );
+    basic_blocks.push(new_block)
 }
