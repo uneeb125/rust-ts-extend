@@ -47,7 +47,7 @@ thread_local! {
     pub static LAST_CHECKED_TAG: Cell<u32> = const { Cell::new(0) };
 }
 
-pub fn set_current_compartment(tag: u32) {
+pub unsafe fn set_current_compartment(tag: u32) {
     CURRENT_COMPARTMENT.with(|c| c.set(tag));
 }
 
@@ -71,8 +71,8 @@ pub extern "Rust" fn __compartment_read_tls() -> u32 {
 
 #[lang = "compartment_set_tls"]
 #[no_mangle]
-pub extern "Rust" fn __compartment_set_tls(tag: u32) {
-    set_current_compartment(tag);
+pub unsafe extern "Rust" fn __compartment_set_tls(tag: u32) {
+    unsafe { set_current_compartment(tag); }
 }
 
 const HEADER_SIZE: usize = 8;
@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn alloc_dealloc_same_compartment() {
-        set_current_compartment(1);
+        unsafe { set_current_compartment(1); }
         let layout = Layout::new::<[u8; 32]>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
         assert!(!ptr.is_null());
@@ -196,7 +196,7 @@ mod tests {
 
     #[test]
     fn alloc_zeroed_writes_tag() {
-        set_current_compartment(0xDEAD);
+        unsafe { set_current_compartment(0xDEAD); }
         let layout = Layout::new::<[u8; 16]>();
         let ptr = unsafe { GLOBAL.alloc_zeroed(layout) };
         assert!(!ptr.is_null());
@@ -210,29 +210,29 @@ mod tests {
 
     #[test]
     fn dealloc_untagged_allowed_from_anywhere() {
-        set_current_compartment(0);
+        unsafe { set_current_compartment(0); }
         let layout = Layout::new::<[u8; 16]>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
-        set_current_compartment(99);
+        unsafe { set_current_compartment(99); }
         unsafe { GLOBAL.dealloc(ptr, layout) };
     }
 
     #[test]
     fn dealloc_tag_0_allows_cross_compartment() {
-        set_current_compartment(0);
+        unsafe { set_current_compartment(0); }
         let layout = Layout::new::<[u8; 16]>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
-        set_current_compartment(42);
+        unsafe { set_current_compartment(42); }
         unsafe { GLOBAL.dealloc(ptr, layout) };
     }
 
     #[test]
     fn realloc_preserves_tag() {
-        set_current_compartment(1);
+        unsafe { set_current_compartment(1); }
         let layout = Layout::new::<[u8; 16]>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
 
-        set_current_compartment(1);
+        unsafe { set_current_compartment(1); }
         let new_ptr = unsafe { GLOBAL.realloc(ptr, layout, 32) };
         assert!(!new_ptr.is_null());
         let real_ptr = unsafe { new_ptr.sub(HEADER_SIZE) };
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn realloc_shrink_updates_size() {
-        set_current_compartment(1);
+        unsafe { set_current_compartment(1); }
         let layout = Layout::new::<[u8; 64]>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
         let new_ptr = unsafe { GLOBAL.realloc(ptr, layout, 32) };
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn zero_sized_alloc() {
-        set_current_compartment(1);
+        unsafe { set_current_compartment(1); }
         let layout = Layout::new::<()>();
         let ptr = unsafe { GLOBAL.alloc(layout) };
         assert!(!ptr.is_null());
