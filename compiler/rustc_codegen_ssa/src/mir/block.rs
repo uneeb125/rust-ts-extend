@@ -1218,10 +1218,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             if bx.cx().sess().compartment_runtime_checks() {
                 let caller_set = bx.tcx().compartment_set(self.instance.def_id());
                 if !caller_set.is_empty() {
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    caller_set.hash(&mut hasher);
-                    let caller_id: u32 = (hasher.finish() & 0xFFFF_FFFF) as u32;
+                    let caller_id = rustc_middle::ty::vtable::encode_compartment_set(&caller_set);
 
                     let ptr_size = bx.data_layout().pointer_size();
                     // CompartmentArrayPtr is at vtable header index 3

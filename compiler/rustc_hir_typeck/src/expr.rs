@@ -1804,7 +1804,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method is in a trusted compartment, allow the call
                 let method_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
-                if self.tcx.compartments_enabled() && !rcvr_compartments.tags.is_empty()
+                let bypass = crate::cast::is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
+                if self.tcx.compartments_enabled() && !bypass && !rcvr_compartments.tags.is_empty()
                     && !method_is_trusted
                     && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                 {
@@ -1842,7 +1843,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
 
                         // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                        if self.tcx.compartments_enabled() && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                        if self.tcx.compartments_enabled() && !bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                             self.tcx.dcx().span_err(
                                 arg.span,
                                 format!(
