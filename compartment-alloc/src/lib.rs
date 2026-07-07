@@ -1,3 +1,5 @@
+#![feature(lang_items)]
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -19,6 +21,25 @@ impl CompartmentTag {
     pub fn is_none(self) -> bool {
         self.0 == 0
     }
+}
+
+/// Deterministic hash of compartment names. Must match the compiler's
+/// `encode_compartment_set` in `rustc_middle/src/ty/vtable.rs`.
+pub fn encode_compartment_set(names: &[&str]) -> u32 {
+    if names.is_empty() {
+        return 0;
+    }
+    let mut sorted: Vec<&str> = names.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    let mut h: u32 = 0x811C9DC5;
+    for name in &sorted {
+        for &b in name.as_bytes() {
+            h = h.wrapping_mul(0x01000193).wrapping_add(b as u32);
+        }
+        h = h.wrapping_mul(0x01000193).wrapping_add(0xFF);
+    }
+    h & 0x7FFF_FFFF
 }
 
 thread_local! {
