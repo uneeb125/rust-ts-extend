@@ -210,6 +210,7 @@ symbols! {
         trusted_compartments,
         compartment_read_tls,
         compartment_set_tls,
+        compartment_lookup_tag,
         Clone,
         CoercePointee,
         CoercePointeeValidated,

@@ -45,6 +45,76 @@ pub fn encode_compartment_set(names: &[&str]) -> u32 {
 thread_local! {
     pub static CURRENT_COMPARTMENT: Cell<u32> = const { Cell::new(0) };
     pub static LAST_CHECKED_TAG: Cell<u32> = const { Cell::new(0) };
+    pub static SIDE_TABLE: std::cell::RefCell<SideTable> =
+        const { std::cell::RefCell::new(SideTable::new()) };
+}
+
+const SIDE_TABLE_SIZE: usize = 4096;
+
+#[derive(Copy, Clone)]
+struct SideTableEntry {
+    base: usize,
+    size: u32,
+    tag: u32,
+}
+
+struct SideTable {
+    entries: [SideTableEntry; SIDE_TABLE_SIZE],
+}
+
+impl SideTable {
+    const fn new() -> Self {
+        SideTable { entries: [SideTableEntry { base: 0, size: 0, tag: 0 }; SIDE_TABLE_SIZE] }
+    }
+
+    fn hash(addr: usize) -> usize {
+        addr.wrapping_mul(0x9E3779B9) >> (usize::BITS - 12)
+    }
+
+    fn register(&mut self, base: usize, size: usize, tag: u32) {
+        let mut idx = Self::hash(base);
+        for _ in 0..SIDE_TABLE_SIZE {
+            if self.entries[idx].tag == 0 {
+                self.entries[idx] = SideTableEntry { base, size: size as u32, tag };
+                return;
+            }
+            idx = (idx + 1) & (SIDE_TABLE_SIZE - 1);
+        }
+    }
+
+    fn unregister(&mut self, base: usize) {
+        let mut idx = Self::hash(base);
+        for _ in 0..SIDE_TABLE_SIZE {
+            let e = &self.entries[idx];
+            if e.tag == 0 { return; }
+            if e.base == base {
+                self.entries[idx] = SideTableEntry { base: 0, size: 0, tag: 0 };
+                return;
+            }
+            idx = (idx + 1) & (SIDE_TABLE_SIZE - 1);
+        }
+    }
+
+    fn lookup(&self, addr: usize) -> u32 {
+        let mut idx = Self::hash(addr);
+        for _ in 0..SIDE_TABLE_SIZE {
+            let e = &self.entries[idx];
+            if e.tag == 0 { return 0; }
+            if addr >= e.base && addr < e.base + e.size as usize {
+                return e.tag;
+            }
+            idx = (idx + 1) & (SIDE_TABLE_SIZE - 1);
+        }
+        0
+    }
+}
+
+fn register_allocation(base: usize, size: usize, tag: u32) {
+    SIDE_TABLE.with(|t| t.borrow_mut().register(base, size, tag));
+}
+
+fn unregister_allocation(base: usize) {
+    SIDE_TABLE.with(|t| t.borrow_mut().unregister(base));
 }
 
 pub unsafe fn set_current_compartment(tag: u32) {
@@ -73,6 +143,12 @@ pub extern "Rust" fn __compartment_read_tls() -> u32 {
 #[no_mangle]
 pub unsafe extern "Rust" fn __compartment_set_tls(tag: u32) {
     unsafe { set_current_compartment(tag); }
+}
+
+#[lang = "compartment_lookup_tag"]
+#[no_mangle]
+pub extern "Rust" fn __compartment_lookup_tag(ptr: *const u8) -> u32 {
+    SIDE_TABLE.with(|t| t.borrow().lookup(ptr as usize))
 }
 
 const HEADER_SIZE: usize = 8;
@@ -115,7 +191,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for CompartmentAllocator<A> {
         ptr.cast::<u32>().write(tag);
         ptr.add(4).cast::<u32>().write(layout.size() as u32);
 
-        ptr.add(HEADER_SIZE)
+        let user_ptr = ptr.add(HEADER_SIZE);
+        register_allocation(ptr as usize, layout.size() + HEADER_SIZE, tag);
+        user_ptr
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
@@ -130,6 +208,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for CompartmentAllocator<A> {
         let real_ptr = ptr.sub(HEADER_SIZE);
         let tag = real_ptr.cast::<u32>().read();
         let stored_size = real_ptr.add(4).cast::<u32>().read();
+
+        unregister_allocation(real_ptr as usize);
 
         let cur = current_compartment();
         if tag != 0 && cur != 0 && tag != cur {

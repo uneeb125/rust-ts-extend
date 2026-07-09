@@ -321,6 +321,7 @@ language_item_table! {
     PanicCompartmentViolation,  sym::panic_compartment_violation,   panic_compartment_violation,    Target::Fn,             GenericRequirement::None;
     CompartmentReadTls,      sym::compartment_read_tls,  compartment_read_tls,       Target::Fn,             GenericRequirement::None;
     CompartmentSetTls,       sym::compartment_set_tls,   compartment_set_tls,        Target::Fn,             GenericRequirement::None;
+    CompartmentLookupTag,    sym::compartment_lookup_tag, compartment_lookup_tag,    Target::Fn,             GenericRequirement::None;
     PanicCoroutineResumedDrop, sym::panic_const_coroutine_resumed_drop, panic_const_coroutine_resumed_drop, Target::Fn, GenericRequirement::None;
     PanicAsyncFnResumedDrop, sym::panic_const_async_fn_resumed_drop, panic_const_async_fn_resumed_drop, Target::Fn, GenericRequirement::None;
     PanicAsyncGenFnResumedDrop, sym::panic_const_async_gen_fn_resumed_drop, panic_const_async_gen_fn_resumed_drop, Target::Fn, GenericRequirement::None;

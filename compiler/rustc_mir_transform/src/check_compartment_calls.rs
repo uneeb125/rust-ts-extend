@@ -58,23 +58,34 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
 
         let excluded_pointees: &[Ty<'tcx>] = &[];
 
-        check_pointers(
-            tcx,
-            body,
-            excluded_pointees,
-            |tcx, pointer, pointee_ty, _context, local_decls, stmts, source_info| {
-                make_compartment_check(
-                    tcx,
-                    caller_const.clone(),
-                    pointer,
-                    pointee_ty,
-                    local_decls,
-                    stmts,
-                    source_info,
-                )
-            },
-            BorrowedFieldProjectionMode::NoFollowProjections,
-        );
+        if tcx.sess.compartment_strict() {
+            if let Some(lookup_fn) = tcx.lang_items().compartment_lookup_tag() {
+                insert_side_table_checks(tcx, body, caller_const.clone(), lookup_fn);
+            }
+        }
+
+        // Always run inline checks as defense-in-depth (unless strict+lang-item is present,
+        // in which case the side table is the primary enforcement and inline checks are
+        // skipped to avoid double-checking).
+        if !tcx.sess.compartment_strict() || tcx.lang_items().compartment_lookup_tag().is_none() {
+            check_pointers(
+                tcx,
+                body,
+                excluded_pointees,
+                |tcx, pointer, pointee_ty, _context, local_decls, stmts, source_info| {
+                    make_compartment_check(
+                        tcx,
+                        caller_const.clone(),
+                        pointer,
+                        pointee_ty,
+                        local_decls,
+                        stmts,
+                        source_info,
+                    )
+                },
+                BorrowedFieldProjectionMode::NoFollowProjections,
+            );
+        }
 
         insert_fnptr_creation_checks(tcx, body, &caller_set, caller_const.clone());
 
@@ -373,6 +384,105 @@ fn insert_fnptr_creation_checks<'tcx>(
                     msg: Box::new(AssertKind::CompartmentViolation),
                     unwind: UnwindAction::Unreachable,
                 },
+            });
+        }
+    }
+}
+
+fn insert_side_table_checks<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    body: &mut Body<'tcx>,
+    caller_const: Operand<'tcx>,
+    lookup_fn: DefId,
+) {
+    let basic_blocks = body.basic_blocks.as_mut();
+    let local_decls = &mut body.local_decls;
+
+    for block in basic_blocks.indices().rev() {
+        let num_stmts = basic_blocks[block].statements.len();
+        for stmt_idx in (0..num_stmts).rev() {
+            let stmt = &basic_blocks[block].statements[stmt_idx];
+            let source_info = stmt.source_info;
+
+            let pointer_ty = match &stmt.kind {
+                StatementKind::Assign(box (_, rvalue)) => {
+                    let indirect_place = match rvalue {
+                        Rvalue::Use(Operand::Copy(p)) | Rvalue::Use(Operand::Move(p))
+                            if p.is_indirect() => Some(Place::from(p.local)),
+                        _ => None,
+                    };
+                    match indirect_place {
+                        Some(base) => {
+                            let ty = base.ty(local_decls, tcx).ty;
+                            match ty.kind() {
+                                ty::RawPtr(_, _) => base,
+                                _ => continue,
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+                _ => continue,
+            };
+
+            let location = Location { block, statement_index: stmt_idx };
+            let deref_block = split_block(basic_blocks, location);
+            let cmp_block = push_block(basic_blocks);
+            let ok_block = push_block(basic_blocks);
+
+            let u8_ptr_ty = Ty::new_imm_ptr(tcx, tcx.types.u8);
+            let ptr_as_u8 = push_temp(
+                local_decls, &mut basic_blocks[block].statements, source_info,
+                Rvalue::Cast(CastKind::PtrToPtr, Operand::Copy(pointer_ty), u8_ptr_ty),
+                u8_ptr_ty,
+            );
+
+            let tag_local = local_decls.push(
+                LocalDecl::with_source_info(tcx.types.u32, source_info),
+            );
+            let tag_place: Place<'tcx> = tag_local.into();
+
+            let caller_const_for_cmp = caller_const.clone();
+
+            basic_blocks[block].terminator = Some(Terminator {
+                source_info,
+                kind: TerminatorKind::Call {
+                    func: Operand::function_handle(tcx, lookup_fn, [], source_info.span),
+                    args: Box::new([Spanned {
+                        node: Operand::Copy(ptr_as_u8),
+                        span: source_info.span,
+                    }]),
+                    destination: tag_place,
+                    target: Some(cmp_block),
+                    unwind: UnwindAction::Continue,
+                    fn_span: source_info.span,
+                    call_source: CallSource::Misc,
+                },
+            });
+
+            let cond = push_temp(
+                local_decls, &mut basic_blocks[cmp_block].statements, source_info,
+                Rvalue::BinaryOp(
+                    BinOp::Eq,
+                    Box::new((caller_const_for_cmp, Operand::Copy(tag_place))),
+                ),
+                tcx.types.bool,
+            );
+
+            basic_blocks[cmp_block].terminator = Some(Terminator {
+                source_info,
+                kind: TerminatorKind::Assert {
+                    cond: Operand::Copy(cond),
+                    expected: true,
+                    target: ok_block,
+                    msg: Box::new(AssertKind::CompartmentViolation),
+                    unwind: UnwindAction::Unreachable,
+                },
+            });
+
+            basic_blocks[ok_block].terminator = Some(Terminator {
+                source_info,
+                kind: TerminatorKind::Goto { target: deref_block },
             });
         }
     }
