@@ -371,6 +371,18 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
             return self_type_compartments;
         }
 
+        // Allocator shims synthesized by the compiler must be [Default]
+        // to preserve the caller's TLS compartment during allocation.
+        if let Some(fn_name_sym) = tcx.opt_item_name(def_id) {
+            let fn_name = fn_name_sym.as_str();
+            if fn_name.starts_with("__rust_alloc")
+                || fn_name.starts_with("__rust_dealloc")
+                || fn_name.starts_with("__rust_realloc")
+            {
+                return CompartmentSet::default();
+            }
+        }
+
         if let Some(partition_compartments) = get_partition_compartments(tcx, def_id) {
             if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                 println!("DEBUG: Using partition compartments for {:?}: {:?}", def_id, partition_compartments.tags);
