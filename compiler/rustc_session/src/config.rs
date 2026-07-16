@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::{self, FromStr};
 use std::sync::LazyLock;
-use std::{cmp, fmt, fs, iter};
+use std::{cmp, env, fmt, fs, iter};
 
 use externs::{ExternOpt, split_extern_opt};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
@@ -576,14 +576,26 @@ pub struct PartitionEntry {
 pub type PartitionMap = FxHashMap<String, PartitionEntry>;
 
 pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
-    let data = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read compartment partition file `{}`: {e}", path.display()))?;
+    let resolved = if path.is_relative() {
+        env::var("CARGO_MANIFEST_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .map(|base| base.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    let data = match std::fs::read_to_string(&resolved) {
+        Ok(d) => d,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(PartitionMap::default()),
+        Err(e) => return Err(format!("cannot read compartment partition file `{}`: {e}", resolved.display())),
+    };
     let value: serde_json::Value = serde_json::from_str(&data)
-        .map_err(|e| format!("cannot parse compartment partition file `{}`: {e}", path.display()))?;
+        .map_err(|e| format!("cannot parse compartment partition file `{}`: {e}", resolved.display()))?;
     let obj = value.as_object().ok_or_else(|| {
         format!(
             "compartment partition file `{}` must contain a JSON object",
-            path.display()
+            resolved.display()
         )
     })?;
 
@@ -623,7 +635,7 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
                 let comp_val = o.get("compartment").ok_or_else(|| {
                     format!(
                         "missing `compartment` field in partition file `{}` for `{name}`",
-                        path.display()
+                        resolved.display()
                     )
                 })?;
                 let compartments = parse_compartment_ids(comp_val)?;
@@ -635,9 +647,9 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
             }
             _ => {
                 return Err(format!(
-                    "invalid value type in partition file `{}` for `{name}`: \
-                     expected string, number, array, or object",
-                    path.display()
+                     "invalid value type in partition file `{}` for `{name}`: \
+                      expected string, number, array, or object",
+                     resolved.display()
                 ));
             }
         };
