@@ -2266,6 +2266,8 @@ options! {
         "enable runtime compartment enforcement for dynamic dispatch (default: off)"),
     compartment_strict: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "use side-table tag lookup instead of in-band header for compartment checks (default: off)"),
+    compartment_root_only: bool = (false, parse_bool, [TRACKED],
+        "only apply compartment checks to the root crate, skip dependencies (default: no)"),
     contract_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "emit runtime checks for contract pre- and post-conditions (default: no)"),
     coverage_options: CoverageOptions = (CoverageOptions::default(), parse_coverage_options, [TRACKED],

@@ -150,6 +150,8 @@ pub struct Session {
 
     pub compartment_partition_map: Option<PartitionMap>,
 
+    pub is_root_crate: bool,
+
     target_filesearch: FileSearch,
     host_filesearch: FileSearch,
 
@@ -702,7 +704,11 @@ impl Session {
     }
 
     pub fn compartment_runtime_checks(&self) -> bool {
-        self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false)
+        let enabled = self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false);
+        if self.opts.unstable_opts.compartment_root_only && !self.is_root_crate {
+            return false;
+        }
+        enabled
     }
 
     pub fn compartment_strict(&self) -> bool {
@@ -711,6 +717,10 @@ impl Session {
 
     pub fn compartment_crate_default(&self) -> bool {
         self.opts.unstable_opts.compartment_crate_default
+    }
+
+    pub fn compartment_root_only(&self) -> bool {
+        self.opts.unstable_opts.compartment_root_only
     }
 
     pub fn contract_checks(&self) -> bool {
@@ -1166,10 +1176,11 @@ pub fn build_session(
         unstable_target_features: Default::default(),
         cfg_version,
         using_internal_features,
-        compartment_partition_map,
-        target_filesearch,
-        host_filesearch,
-        invocation_temp,
+            compartment_partition_map,
+            target_filesearch,
+            host_filesearch,
+            invocation_temp,
+            is_root_crate: env::var("CARGO_PRIMARY_PACKAGE").as_deref() == Ok("1"),
     };
 
     validate_commandline_args_with_session_available(&sess);

@@ -1956,7 +1956,11 @@ impl<'tcx> TyCtxt<'tcx> {
     /// This is the case when either the per-crate `#![feature(compartments)]` is set
     /// or the global `-Z compartments` flag is enabled.
     pub fn compartments_enabled(self) -> bool {
-        self.features().compartments() || self.sess.opts.unstable_opts.compartments
+        let enabled = self.features().compartments() || self.sess.opts.unstable_opts.compartments;
+        if self.sess.compartment_root_only() && !self.sess.is_root_crate {
+            return false;
+        }
+        enabled
     }
 
     pub fn def_key(self, id: impl IntoQueryParam<DefId>) -> rustc_hir::definitions::DefKey {
