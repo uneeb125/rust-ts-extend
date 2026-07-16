@@ -42,7 +42,7 @@ pub use crate::code_stats::{DataTypeKind, FieldInfo, FieldKind, SizeKind, Varian
 use crate::config::{
     self, CoverageLevel, CoverageOptions, CrateType, DebugInfo, ErrorOutputType, FunctionReturn,
     Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, PartitionMap,
-    RemapPathScopeComponents, SwitchWithOptPath, load_partition_map,
+    RemapPathScopeComponents, SwitchWithOptPath, load_global_trusted_file, load_partition_map,
 };
 use crate::filesearch::FileSearch;
 use crate::lint::LintId;
@@ -151,6 +151,8 @@ pub struct Session {
     pub compartment_partition_map: Option<PartitionMap>,
 
     pub is_root_crate: bool,
+
+    pub global_trusted: Vec<rustc_span::Symbol>,
 
     target_filesearch: FileSearch,
     host_filesearch: FileSearch,
@@ -723,6 +725,10 @@ impl Session {
         self.opts.unstable_opts.compartment_root_only
     }
 
+    pub fn global_trusted_compartments(&self) -> &[rustc_span::Symbol] {
+        &self.global_trusted
+    }
+
     pub fn contract_checks(&self) -> bool {
         self.opts.unstable_opts.contract_checks.unwrap_or(false)
     }
@@ -1117,6 +1123,15 @@ pub fn build_session(
         .transpose()
         .unwrap_or_else(|err| dcx.handle().fatal(err));
 
+    let global_trusted = sopts
+        .unstable_opts
+        .compartment_global_trusted_file
+        .as_ref()
+        .map(|path| load_global_trusted_file(path))
+        .transpose()
+        .unwrap_or_else(|err| dcx.handle().fatal(err))
+        .unwrap_or_default();
+
     let mut psess = ParseSess::with_dcx(dcx, source_map);
     psess.assume_incomplete_release = sopts.unstable_opts.assume_incomplete_release;
 
@@ -1181,6 +1196,7 @@ pub fn build_session(
             host_filesearch,
             invocation_temp,
             is_root_crate: env::var("CARGO_PRIMARY_PACKAGE").as_deref() == Ok("1"),
+            global_trusted,
     };
 
     validate_commandline_args_with_session_available(&sess);

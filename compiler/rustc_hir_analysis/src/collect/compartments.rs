@@ -55,8 +55,22 @@ fn partition_lookup_key(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 /// 2. Then walks up through parent modules
 /// 3. Finally checks crate-level `#![trusted_compartments(...)]`
 pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+    let with_global = |local: CompartmentSet| -> CompartmentSet {
+        let global = tcx.sess.global_trusted_compartments();
+        if global.is_empty() {
+            return local;
+        }
+        let mut tags = local.tags;
+        for &tag in global {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+        CompartmentSet::from_iter(tags)
+    };
+
     if !def_id.is_local() {
-        return CompartmentSet::empty();
+        return with_global(CompartmentSet::empty());
     }
 
     let local_def_id = def_id.expect_local();
@@ -86,7 +100,7 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                             trusted_tags
                         );
                     }
-                    return CompartmentSet::from_iter(trusted_tags);
+                    return with_global(CompartmentSet::from_iter(trusted_tags));
                 }
             }
         }
@@ -117,12 +131,12 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                     trusted_tags
                 );
             }
-            return CompartmentSet::from_iter(trusted_tags);
+            return with_global(CompartmentSet::from_iter(trusted_tags));
         }
     }
 
     if let Some(trusted) = get_partition_trusted(tcx, def_id) {
-        return trusted;
+        return with_global(trusted);
     }
 
     // Walk up the HIR tree through parents
@@ -154,7 +168,7 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                             trusted_tags
                         );
                     }
-                    return CompartmentSet::from_iter(trusted_tags);
+                    return with_global(CompartmentSet::from_iter(trusted_tags));
                 }
             }
             
@@ -198,11 +212,11 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                             }
                         }
                     }
-                    return CompartmentSet::from_iter(trusted);
+                    return with_global(CompartmentSet::from_iter(trusted));
                 }
             }
             
-            return CompartmentSet::empty();
+            return with_global(CompartmentSet::empty());
         }
 
         // Check this owner's attributes
@@ -229,7 +243,7 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                         trusted_tags
                     );
                 }
-                return CompartmentSet::from_iter(trusted_tags);
+                return with_global(CompartmentSet::from_iter(trusted_tags));
             }
         }
 

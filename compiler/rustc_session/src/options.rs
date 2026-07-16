@@ -2268,6 +2268,8 @@ options! {
         "use side-table tag lookup instead of in-band header for compartment checks (default: off)"),
     compartment_root_only: bool = (false, parse_bool, [TRACKED],
         "only apply compartment checks to the root crate, skip dependencies (default: no)"),
+    compartment_global_trusted_file: Option<PathBuf> = (None, parse_opt_pathbuf, [TRACKED],
+        "load globally trusted compartment names from a JSON file (default: none)"),
     contract_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "emit runtime checks for contract pre- and post-conditions (default: no)"),
     coverage_options: CoverageOptions = (CoverageOptions::default(), parse_coverage_options, [TRACKED],

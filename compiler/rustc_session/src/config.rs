@@ -658,6 +658,36 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
     Ok(map)
 }
 
+pub fn load_global_trusted_file(path: &Path) -> Result<Vec<Symbol>, String> {
+    let resolved = if path.is_relative() {
+        env::var("CARGO_MANIFEST_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .map(|base| base.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    let data = match std::fs::read_to_string(&resolved) {
+        Ok(d) => d,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("cannot read global trusted file `{}`: {e}", resolved.display())),
+    };
+    let value: serde_json::Value = serde_json::from_str(&data)
+        .map_err(|e| format!("cannot parse global trusted file `{}`: {e}", resolved.display()))?;
+    let arr = value.as_array().ok_or_else(|| {
+        format!("global trusted file `{}` must contain a JSON array of strings", resolved.display())
+    })?;
+    let mut trusted = Vec::new();
+    for v in arr {
+        let s = v.as_str().ok_or_else(|| {
+            format!("global trusted file `{}` must contain only strings, found: {v}", resolved.display())
+        })?;
+        trusted.push(Symbol::intern(s));
+    }
+    Ok(trusted)
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable_Generic)]
 #[derive(Encodable, Decodable)]
 pub enum SymbolManglingVersion {
