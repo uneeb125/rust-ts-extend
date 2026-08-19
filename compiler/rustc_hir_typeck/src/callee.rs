@@ -735,8 +735,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             }
         } else {
             // Closure call - get compartments from the callee expression itself
-            // (which was recorded when the closure was created)
-            if let Some(closure_compartments) = self.typeck_results.borrow().node_compartment(callee_expr.hir_id).cloned() {
+            // (which was recorded when the closure was created). Clone first so
+            // the immutable borrow is released before we mutate typeck_results.
+            let callee_compartments =
+                self.typeck_results.borrow().node_compartment(callee_expr.hir_id).cloned();
+            if let Some(closure_compartments) = callee_compartments {
                 if !closure_compartments.tags.is_empty() {
                     self.typeck_results.borrow_mut().node_compartments_mut().insert(
                         call_expr.hir_id,
