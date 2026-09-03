@@ -16,6 +16,7 @@ mod callee;
 pub mod cast;
 mod check;
 mod closure;
+mod compartments;
 mod coercion;
 mod demand;
 mod diverges;

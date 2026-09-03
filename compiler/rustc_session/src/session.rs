@@ -43,6 +43,7 @@ use crate::config::{
     self, CoverageLevel, CoverageOptions, CrateType, DebugInfo, ErrorOutputType, FunctionReturn,
     Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, PartitionMap,
     RemapPathScopeComponents, SwitchWithOptPath, load_global_trusted_file, load_partition_map,
+    CompartmentViolation,
 };
 use crate::filesearch::FileSearch;
 use crate::lint::LintId;
@@ -719,6 +720,10 @@ impl Session {
 
     pub fn compartment_crate_default(&self) -> bool {
         self.opts.unstable_opts.compartment_crate_default
+    }
+
+    pub fn compartment_violations(&self) -> CompartmentViolation {
+        self.opts.unstable_opts.compartment_violations
     }
 
     pub fn compartment_root_only(&self) -> bool {

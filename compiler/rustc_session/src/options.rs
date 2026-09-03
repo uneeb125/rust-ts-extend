@@ -796,6 +796,7 @@ mod desc {
     pub(crate) const parse_offload: &str = "a comma separated list of settings: `Enable`";
     pub(crate) const parse_comma_list: &str = "a comma-separated list of strings";
     pub(crate) const parse_compartment_missing: &str = "one of: `skip`, `error`, `warn`";
+    pub(crate) const parse_compartment_violations: &str = "one of: `error`, `warn`, `allow`";
     pub(crate) const parse_opt_comma_list: &str = parse_comma_list;
     pub(crate) const parse_number: &str = "a number";
     pub(crate) const parse_opt_number: &str = parse_number;
@@ -1081,6 +1082,19 @@ pub mod parse {
             Some("skip") => *slot = CompartmentMissing::Skip,
             Some("error") => *slot = CompartmentMissing::Error,
             Some("warn") => *slot = CompartmentMissing::Warn,
+            _ => return false,
+        };
+        true
+    }
+
+    pub(crate) fn parse_compartment_violations(
+        slot: &mut CompartmentViolation,
+        v: Option<&str>,
+    ) -> bool {
+        match v {
+            Some("error") => *slot = CompartmentViolation::Error,
+            Some("warn") => *slot = CompartmentViolation::Warn,
+            Some("allow") => *slot = CompartmentViolation::Allow,
             _ => return false,
         };
         true
@@ -2262,6 +2276,8 @@ options! {
     compartment_missing: CompartmentMissing = (CompartmentMissing::Skip, parse_compartment_missing, [UNTRACKED],
         "behavior for functions not found in the partition file: `skip` (use default), \
          `error` (emit error), `warn` (warn and use default) (default: skip)"),
+    compartment_violations: CompartmentViolation = (CompartmentViolation::Error, parse_compartment_violations, [UNTRACKED],
+        "emit static compartment violations as `error`, `warn`, or `allow` (default: error)"),
     compartment_runtime_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "enable runtime compartment enforcement for dynamic dispatch (default: off)"),
     compartment_strict: Option<bool> = (None, parse_opt_bool, [TRACKED],

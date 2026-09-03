@@ -224,14 +224,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         }
 
         if !current.can_access_with_trusted(&target, &trusted) {
-            let err = self.tcx.dcx().struct_span_err(
+            if let Some(err) = crate::compartments::compartment_diag(
+                self.tcx,
                 span,
                 format!(
                     "compartment violation: cannot access {} in '{:?}' from context '{:?}'",
                     kind, target.tags, current.tags
                 ),
-            );
-            err.emit();
+            ) {
+                err.emit();
+            }
         }
         target
     }

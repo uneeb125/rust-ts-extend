@@ -227,13 +227,16 @@ impl<'tcx> TypeckRootCtxt<'tcx> {
         }
         let allowed = compartments.tags.iter().all(|tag| current.tags.contains(tag));
         if !allowed {
-            tcx.dcx().span_err(
+            if let Some(err) = crate::compartments::compartment_diag(
+                tcx,
                 span,
                 format!(
                     "cannot access compartment(s): {} - not available in current scope",
                     compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                 ),
-            );
+            ) {
+                err.emit();
+            }
         }
     }
 

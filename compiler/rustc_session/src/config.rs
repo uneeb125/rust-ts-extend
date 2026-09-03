@@ -567,6 +567,14 @@ pub enum CompartmentMissing {
     Warn,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+pub enum CompartmentViolation {
+    #[default]
+    Error,
+    Warn,
+    Allow,
+}
+
 #[derive(Clone, Debug)]
 pub struct PartitionEntry {
     pub compartments: Vec<Symbol>,
