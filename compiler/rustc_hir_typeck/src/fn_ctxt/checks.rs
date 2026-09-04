@@ -75,10 +75,28 @@ pub(crate) enum DivergingBlockBehavior {
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     /// Find compartments in nested expressions (for unsafe blocks, blocks, etc.)
     pub(in super::super) fn find_compartments_in_expr(&self, expr: &hir::Expr<'tcx>) -> CompartmentSet {
+        // [COMPARTMENT_DEBUG] Trace the compartment resolution of an expression:
+        // which expression kind, at which source location, and inside which item
+        // (owner) is currently being type-checked.
+        if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+            let owner = self.typeck_results.borrow().hir_owner;
+            let owner_str = self.tcx.def_path_str(owner.to_def_id());
+            let kind = format!("{:?}", expr.kind);
+            let kind_name = kind.split('(').next().unwrap_or(kind.as_str());
+            eprintln!(
+                "DEBUG: [find_compartments_in_expr] resolving compartments for `{kind_name}` at {:?} in fn `{owner_str}`",
+                expr.span,
+            );
+        }
         // First check if this expression has compartments recorded directly
         if let Some(compartment) = self.typeck_results.borrow().node_compartment(expr.hir_id).cloned() {
             if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                eprintln!("DEBUG: find_compartments_in_expr {:?} hir_id={:?} -> RECORDED {:?}", expr.kind, expr.hir_id, compartment.tags);
+                eprintln!(
+                    "DEBUG: [find_compartments_in_expr] {:?} at {:?} -> already recorded compartments ({})",
+                    expr.kind,
+                    expr.span,
+                    compartment.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                );
             }
             return compartment;
         }
@@ -474,6 +492,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     CompartmentSet::default()
                 }
             }
+            hir::ExprKind::Yield(_, _) => {
+                // Yield expression - compiler-synthesized coroutine suspension
+                // point (e.g. `_task_context = yield ();` inside the `.await`
+                // desugar). It carries no data-flow compartment, so return an
+                // empty set rather than the `{Default}` fallback.
+                CompartmentSet::empty()
+            }
             hir::ExprKind::Repeat(elem, _) => {
                 // Array repeat expression [x; n] - check element
                 self.find_compartments_in_expr(elem)
@@ -501,7 +526,19 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // Literals inherit the current function's compartments
                 self.root_ctxt.get_current_compartments()
             }
-            _ => CompartmentSet::default(),
+            _ => {
+                // [COMPARTMENT_DEBUG] Reaching here means the expression kind has no
+                // explicit compartment handling. We return the literal `{Default}`
+                // tag (NOT an empty set), so callers may flag it as a violation.
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    eprintln!(
+                        "DEBUG: [find_compartments_in_expr] {:?} at {:?} -> no explicit handling, returning Default fallback",
+                        expr.kind,
+                        expr.span,
+                    );
+                }
+                CompartmentSet::default()
+            }
         }
     }
 
@@ -1339,6 +1376,20 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
             if self.tcx.compartments_enabled() && !bypass && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
+                // [COMPARTMENT_DEBUG] A let-binding initializer is about to be
+                // flagged as a compartment violation. Print the full decision
+                // context so the warning can be traced back to its source.
+                if std::env::var("COMPARTMENT_DEBUG").is_ok() {
+                    let owner_str = self.tcx.def_path_str(current_def_id);
+                    eprintln!(
+                        "DEBUG: [check_decl] let-binding initializer {:?} at {:?} in fn `{owner_str}`: init compartments ({}); scope ({}); trusted ({}); bypass={bypass}",
+                        init.kind,
+                        init.span,
+                        init_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                        trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                    );
+                }
                 if let Some(mut err) = crate::compartments::compartment_diag(
                     self.tcx,
                     init.span,

@@ -1531,7 +1531,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let bypass = is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
 
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-            eprintln!("DEBUG: check_assign rhs kind={:?} compartments={:?} bypass={}", rhs.kind, rhs_compartments.tags, bypass);
+            // [COMPARTMENT_DEBUG] Print the full decision context for an
+            // assignment compartment check: the RHS expression being assigned,
+            // its compartments, the current scope, trusted set, and bypass state.
+            let owner_str = self.tcx.def_path_str(current_def_id);
+            eprintln!(
+                "DEBUG: [check_assign] rhs {:?} at {:?} in fn `{owner_str}`: rhs compartments ({}); scope ({}); trusted ({}); bypass={bypass}",
+                rhs.kind,
+                rhs.span,
+                rhs_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                current_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                trusted.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+            );
         }
 
         if self.tcx.compartments_enabled() && !bypass && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
