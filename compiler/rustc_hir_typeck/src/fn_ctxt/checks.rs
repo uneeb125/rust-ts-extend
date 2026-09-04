@@ -1368,7 +1368,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             // Check if initializer's compartments are accessible from current scope
             // Skip check if let statement is inside crosscomp block
-            let bypass = crate::cast::is_inside_compartment_unsafe_context(self.tcx, decl.hir_id);
+            let bypass = crate::cast::is_compartment_cast_operand(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
 
             // Get trusted compartments for the current context

@@ -293,6 +293,39 @@ pub(super) fn is_inside_compartment_unsafe_context(
     false
 }
 
+/// Returns true if `hir_id` lies within the operand expression of a
+/// compartment cast (`x compas comp(...)`).
+///
+/// A `crosscomp { ... }` block grants ONLY the ability to perform compartment
+/// casts; it is not a blanket bypass. The unit of exemption is the cast itself:
+/// an expression is exempt from compartment checks only when it is (or contains)
+/// the direct operand of a `compas comp(...)` cast, i.e. the programmer
+/// explicitly trusted that specific crossing. Everything else inside a
+/// `crosscomp` block is still checked normally.
+pub(super) fn is_compartment_cast_operand(
+    tcx: TyCtxt<'_>,
+    hir_id: hir::HirId,
+) -> bool {
+    let mut child = hir_id;
+    for (parent_hir_id, parent) in tcx.hir_parent_iter(hir_id) {
+        match parent {
+            hir::Node::Expr(hir::Expr {
+                kind: hir::ExprKind::CompartmentCast(operand, _),
+                ..
+            }) => {
+                return operand.hir_id == child;
+            }
+            hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => {
+                return false;
+            }
+            hir::Node::Item(_) => return false,
+            _ => {}
+        }
+        child = parent_hir_id;
+    }
+    false
+}
+
 /// Returns the expanded HIR source of `expr` if it originates from an external
 /// (procedural) macro expansion, or `None` if it is user-written code.
 ///

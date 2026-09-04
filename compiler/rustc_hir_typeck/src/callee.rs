@@ -622,7 +622,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             if !skip_compartment_check {
                 let current_compartments = self.root_ctxt.get_current_compartments();
-                let bypass = crate::cast::is_inside_compartment_unsafe_context(self.tcx, call_expr.hir_id);
+                let bypass = crate::cast::is_compartment_cast_operand(self.tcx, call_expr.hir_id);
 
                 if self.tcx.compartments_enabled() && !bypass && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
                     if let Some(mut err) = crate::compartments::compartment_diag(

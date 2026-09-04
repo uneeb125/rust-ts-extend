@@ -55,7 +55,7 @@ use crate::{
     TupleArgumentsFlag, cast, fatally_break_rust, report_unexpected_variant_res, type_error_struct,
 };
 
-use crate::cast::is_inside_compartment_unsafe_context;
+use crate::cast::is_compartment_cast_operand;
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub(crate) fn precedence(&self, expr: &hir::Expr<'_>) -> ExprPrecedence {
@@ -1528,7 +1528,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
         // Check if assignment is inside crosscomp block
-        let bypass = is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
+        let bypass = is_compartment_cast_operand(self.tcx, expr.hir_id);
 
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
             // [COMPARTMENT_DEBUG] Print the full decision context for an
@@ -1831,7 +1831,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method is in a trusted compartment, allow the call
                 let method_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
-                let bypass = crate::cast::is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
+                let bypass = crate::cast::is_compartment_cast_operand(self.tcx, expr.hir_id);
                 if self.tcx.compartments_enabled() && !bypass && !rcvr_compartments.tags.is_empty()
                     && !method_is_trusted
                     && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
