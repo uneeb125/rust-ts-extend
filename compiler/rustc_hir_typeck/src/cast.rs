@@ -296,12 +296,12 @@ pub(super) fn is_inside_compartment_unsafe_context(
 /// Returns true if `hir_id` lies within the operand expression of a
 /// compartment cast (`x compas comp(...)`).
 ///
-/// A `crosscomp { ... }` block grants ONLY the ability to perform compartment
-/// casts; it is not a blanket bypass. The unit of exemption is the cast itself:
-/// an expression is exempt from compartment checks only when it is (or contains)
-/// the direct operand of a `compas comp(...)` cast, i.e. the programmer
-/// explicitly trusted that specific crossing. Everything else inside a
-/// `crosscomp` block is still checked normally.
+/// A `crosscomp { ... }` block grants the ability to perform compartment casts;
+/// it is not a blanket bypass. The unit of exemption for value-flow checks is
+/// the cast itself: an expression is exempt from compartment checks only when it
+/// is (or contains) the direct operand of a `compas comp(...)` cast, i.e. the
+/// programmer explicitly trusted that specific crossing. Everything else inside
+/// a `crosscomp` block is still checked normally.
 pub(super) fn is_compartment_cast_operand(
     tcx: TyCtxt<'_>,
     hir_id: hir::HirId,

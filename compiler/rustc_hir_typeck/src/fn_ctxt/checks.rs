@@ -1366,8 +1366,9 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 init_compartments = self.find_compartments_in_expr(init);
             }
 
-            // Check if initializer's compartments are accessible from current scope
-            // Skip check if let statement is inside crosscomp block
+            // Check if initializer's compartments are accessible from current scope.
+            // A let-binding inside `crosscomp` is still tested; only an explicit
+            // `compas comp(...)` cast over the initializer exempts it.
             let bypass = crate::cast::is_compartment_cast_operand(self.tcx, decl.hir_id);
             let current_compartments = self.root_ctxt.get_current_compartments();
 

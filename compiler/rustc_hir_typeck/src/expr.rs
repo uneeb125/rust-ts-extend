@@ -50,12 +50,11 @@ use crate::errors::{
     NoFieldOnVariant, ReturnLikeStatementKind, ReturnStmtOutsideOfFnBody, StructExprNonExhaustive,
     TypeMismatchFruTypo, YieldExprOutsideOfCoroutine,
 };
+use crate::cast::is_compartment_cast_operand;
 use crate::{
     BreakableCtxt, CoroutineTypes, Diverges, FnCtxt, GatherLocalsVisitor, Needs,
     TupleArgumentsFlag, cast, fatally_break_rust, report_unexpected_variant_res, type_error_struct,
 };
-
-use crate::cast::is_compartment_cast_operand;
 
 impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     pub(crate) fn precedence(&self, expr: &hir::Expr<'_>) -> ExprPrecedence {
@@ -1527,7 +1526,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
         let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-        // Check if assignment is inside crosscomp block
+        // A value flow is exempt only when it is the operand of an explicit
+        // `compas comp(...)` cast. Assignments inside `crosscomp` are still tested.
         let bypass = is_compartment_cast_operand(self.tcx, expr.hir_id);
 
         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
@@ -1831,8 +1831,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method is in a trusted compartment, allow the call
                 let method_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
-                let bypass = crate::cast::is_compartment_cast_operand(self.tcx, expr.hir_id);
-                if self.tcx.compartments_enabled() && !bypass && !rcvr_compartments.tags.is_empty()
+                // Calling across compartments is permitted inside a `crosscomp`
+                // block; the call itself is the intended crossing point.
+                let call_allowed = crate::cast::is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
+                if self.tcx.compartments_enabled() && !call_allowed && !rcvr_compartments.tags.is_empty()
                     && !method_is_trusted
                     && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                 {
@@ -1861,6 +1863,10 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let callee_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
 
+                // Arguments are still tested inside `crosscomp`; only an explicit
+                // `compas comp(...)` cast over the call exempts the argument flow.
+                let arg_bypass = crate::cast::is_compartment_cast_operand(self.tcx, expr.hir_id);
+
                 // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
                 for arg in args {
                     let arg_ty = self.typeck_results.borrow().expr_ty(arg);
@@ -1876,7 +1882,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                         }
 
                         // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                        if self.tcx.compartments_enabled() && !bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                        if self.tcx.compartments_enabled() && !arg_bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
                             if let Some(mut err) = crate::compartments::compartment_diag(
                                 self.tcx,
                                 arg.span,

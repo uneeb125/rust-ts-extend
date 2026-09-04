@@ -622,9 +622,11 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             if !skip_compartment_check {
                 let current_compartments = self.root_ctxt.get_current_compartments();
-                let bypass = crate::cast::is_compartment_cast_operand(self.tcx, call_expr.hir_id);
+                // Calling across compartments is permitted inside a `crosscomp`
+                // block; the call itself is the intended crossing point.
+                let call_allowed = crate::cast::is_inside_compartment_unsafe_context(self.tcx, call_expr.hir_id);
 
-                if self.tcx.compartments_enabled() && !bypass && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                if self.tcx.compartments_enabled() && !call_allowed && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
                     if let Some(mut err) = crate::compartments::compartment_diag(
                         self.tcx,
                         call_expr.span,
@@ -651,9 +653,13 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 let callee_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
 
+                // Arguments are still tested inside `crosscomp`; only an explicit
+                // `compas comp(...)` cast over the call exempts the argument flow.
+                let arg_bypass = crate::cast::is_compartment_cast_operand(self.tcx, call_expr.hir_id);
+
                 for arg in arg_exprs {
                     let arg_compartments = self.find_compartments_in_expr(arg);
-                    if !bypass && !arg_compartments.tags.is_empty() && !callee_is_trusted {
+                    if !arg_bypass && !arg_compartments.tags.is_empty() && !callee_is_trusted {
                         let untrusted = arg_compartments.tags.iter()
                             .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
                             .collect::<Vec<_>>();
