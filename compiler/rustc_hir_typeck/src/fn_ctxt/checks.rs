@@ -177,7 +177,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                                 let parent_def_id = parent_owner_id.to_def_id();
-                                if parent_def_id != def_id {
+                                if parent_def_id != def_id
+                                    && matches!(
+                                        self.tcx.def_kind(parent_def_id),
+                                        DefKind::Fn | DefKind::AssocFn | DefKind::Closure
+                                    )
+                                {
                                     let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: Call to const {:?}, using parent {:?} compartments: {:?}",
@@ -226,7 +231,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                                 let parent_def_id = parent_owner_id.to_def_id();
-                                if parent_def_id != def_id {
+                                if parent_def_id != def_id
+                                    && matches!(
+                                        self.tcx.def_kind(parent_def_id),
+                                        DefKind::Fn | DefKind::AssocFn | DefKind::Closure
+                                    )
+                                {
                                     let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: Method call to const {:?}, using parent {:?} compartments: {:?}",
@@ -306,7 +316,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                     eprintln!("DEBUG: Const/Static item {:?} parent is {:?}", local_id, parent_def_id);
                                 }
-                                if parent_def_id != local_id.to_def_id() {
+                                if parent_def_id != local_id.to_def_id()
+                                    && matches!(
+                                        self.tcx.def_kind(parent_def_id),
+                                        DefKind::Fn | DefKind::AssocFn | DefKind::Closure
+                                    )
+                                {
                                     let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);
                                     if std::env::var("COMPARTMENT_DEBUG").is_ok() {
                                         eprintln!("DEBUG: parent_compartments for {:?}: {:?}", parent_def_id, parent_compartments.tags);
