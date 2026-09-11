@@ -520,6 +520,12 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
         tcx.sess.opts.unstable_opts.compartments || tcx.features().compartments()
     }
 
+    /// Whether `block` is a scoping-transparent `crosscomp` block.
+    fn is_transparent_crosscomp(&self, block: &Block) -> bool {
+        self.crosscomp_scoping_enabled()
+            && matches!(block.rules, ast::BlockCheckMode::CompartmentUnsafe(..))
+    }
+
     // Add an import to the current module.
     fn add_import(
         &mut self,
@@ -1101,9 +1107,7 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
     fn build_reduced_graph_for_block(&mut self, block: &Block) {
         // `crosscomp { .. }` is scoping-transparent: its items are defined in the
         // enclosing module, so do not create an anonymous block module.
-        if self.crosscomp_scoping_enabled()
-            && matches!(block.rules, ast::BlockCheckMode::CompartmentUnsafe(..))
-        {
+        if self.is_transparent_crosscomp(block) {
             return;
         }
 
@@ -1464,10 +1468,15 @@ impl<'a, 'ra, 'tcx> Visitor<'a> for BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
     fn visit_block(&mut self, block: &'a Block) {
         let orig_current_module = self.parent_scope.module;
         let orig_current_macro_rules_scope = self.parent_scope.macro_rules;
+        let transparent = self.is_transparent_crosscomp(block);
         self.build_reduced_graph_for_block(block);
         visit::walk_block(self, block);
         self.parent_scope.module = orig_current_module;
-        self.parent_scope.macro_rules = orig_current_macro_rules_scope;
+        // A scoping-transparent `crosscomp` block lets `macro_rules!`
+        // definitions escape into the enclosing block, like the other items.
+        if !transparent {
+            self.parent_scope.macro_rules = orig_current_macro_rules_scope;
+        }
     }
 
     fn visit_assoc_item(&mut self, item: &'a AssocItem, ctxt: AssocCtxt) {
