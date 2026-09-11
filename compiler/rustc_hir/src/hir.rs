@@ -1648,7 +1648,7 @@ pub struct Block<'hir> {
     #[stable_hasher(ignore)]
     pub hir_id: HirId,
     /// Distinguishes between `unsafe { ... }` and `{ ... }`.
-    pub rules: BlockCheckMode,
+    pub rules: BlockCheckMode<'hir>,
     /// The span includes the curly braces `{` and `}` around the block.
     pub span: Span,
     /// If true, then there may exist `break 'a` values that aim to
@@ -2025,11 +2025,25 @@ pub struct ExprField<'hir> {
     pub is_shorthand: bool,
 }
 
+/// A single `A-B` compartment pair declared on a `crosscomp(A-B) { ... }` block.
+///
+/// The pair is bidirectional: within the block, values/calls may flow from `A`
+/// to `B` and from `B` to `A`.
 #[derive(Copy, Clone, PartialEq, Debug, HashStable_Generic)]
-pub enum BlockCheckMode {
+pub struct CompartmentCrossing {
+    pub left: Ident,
+    pub right: Ident,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug, HashStable_Generic)]
+pub enum BlockCheckMode<'hir> {
     DefaultBlock,
     UnsafeBlock(UnsafeSource),
-    CompartmentUnsafeBlock(UnsafeSource),
+    /// A `crosscomp { ... }` or `crosscomp(A-B, ...) { ... }` block.
+    ///
+    /// The slice holds the declared compartment pairs; an empty slice (bare
+    /// `crosscomp`) enables compartment casts but grants no access.
+    CompartmentUnsafeBlock(UnsafeSource, &'hir [CompartmentCrossing]),
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, HashStable_Generic)]
@@ -5005,7 +5019,7 @@ mod size_asserts {
 
     use super::*;
     // tidy-alphabetical-start
-    static_assert_size!(Block<'_>, 48);
+    static_assert_size!(Block<'_>, 72); // grew from 48: BlockCheckMode holds crosscomp pairs
     static_assert_size!(Body<'_>, 24);
     static_assert_size!(Expr<'_>, 64);
     static_assert_size!(ExprKind<'_>, 48);

@@ -1554,10 +1554,11 @@ impl<'a> Parser<'a> {
                 this.parse_expr_array_or_repeat(exp!(CloseBracket))
             } else if this.token.is_keyword(kw::Crosscomp) {
                 this.bump();
+                let pairs = this.parse_crosscomp_pairs()?;
                 this.parse_expr_block(
                     None,
                     lo,
-                    BlockCheckMode::CompartmentUnsafe(ast::UserProvided),
+                    BlockCheckMode::CompartmentUnsafe(ast::UserProvided, pairs),
                 )
                 .map_err(|mut err| {
                     err.span_label(lo, "while parsing this `crosscomp` expression");
@@ -2431,6 +2432,33 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Parses the optional `(A-B, C-D, ...)` pair list of a `crosscomp` block.
+    ///
+    /// Returns an empty list for a bare `crosscomp { .. }` or `crosscomp() { .. }`.
+    pub(super) fn parse_crosscomp_pairs(
+        &mut self,
+    ) -> PResult<'a, ThinVec<ast::CompartmentCrossing>> {
+        let mut pairs = ThinVec::new();
+        if !self.eat(exp!(OpenParen)) {
+            return Ok(pairs);
+        }
+        while !self.eat(exp!(CloseParen)) {
+            let left = self.parse_ident()?;
+            self.expect(exp!(Minus))?;
+            let right = self.parse_ident()?;
+            pairs.push(ast::CompartmentCrossing {
+                left,
+                right,
+                span: left.span.to(right.span),
+            });
+            if !self.eat(exp!(Comma)) {
+                self.expect(exp!(CloseParen))?;
+                break;
+            }
+        }
+        Ok(pairs)
     }
 
     /// Parses a block or unsafe block.

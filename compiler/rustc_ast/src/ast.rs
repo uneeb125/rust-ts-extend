@@ -1335,11 +1335,26 @@ pub struct ExprField {
     pub is_placeholder: bool,
 }
 
-#[derive(Clone, PartialEq, Encodable, Decodable, Debug, Copy, Walkable)]
+/// A single `A-B` compartment pair declared on a `crosscomp(A-B) { ... }` block.
+///
+/// The pair is bidirectional: within the block, values/calls may flow from `A`
+/// to `B` and from `B` to `A`.
+#[derive(Clone, PartialEq, Encodable, Decodable, Debug, Walkable)]
+pub struct CompartmentCrossing {
+    pub left: Ident,
+    pub right: Ident,
+    pub span: Span,
+}
+
+#[derive(Clone, PartialEq, Encodable, Decodable, Debug, Walkable)]
 pub enum BlockCheckMode {
     Default,
     Unsafe(UnsafeSource),
-    CompartmentUnsafe(UnsafeSource),
+    /// A `crosscomp { ... }` or `crosscomp(A-B, ...) { ... }` block.
+    ///
+    /// The second field holds the declared compartment pairs; an empty list
+    /// (bare `crosscomp`) enables compartment casts but grants no access.
+    CompartmentUnsafe(UnsafeSource, ThinVec<CompartmentCrossing>),
 }
 
 #[derive(Clone, PartialEq, Encodable, Decodable, Debug, Copy, Walkable)]
@@ -4050,7 +4065,9 @@ mod size_asserts {
     static_assert_size!(AssocItem, 80);
     static_assert_size!(AssocItemKind, 16);
     static_assert_size!(Attribute, 32);
-    static_assert_size!(Block, 32);
+    // `Block` grew from 32 to 48 bytes because `BlockCheckMode::CompartmentUnsafe`
+    // now carries the `crosscomp(A-B, ...)` pair list.
+    static_assert_size!(Block, 48);
     static_assert_size!(Expr, 72);
     static_assert_size!(ExprKind, 40);
     static_assert_size!(Fn, 184);

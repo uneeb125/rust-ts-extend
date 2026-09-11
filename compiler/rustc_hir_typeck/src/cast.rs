@@ -45,7 +45,7 @@ use rustc_middle::ty::error::TypeError;
 use rustc_middle::ty::{self, Ty, TyCtxt, TypeAndMut, TypeVisitableExt, VariantDef, elaborate};
 use rustc_middle::{bug, span_bug};
 use rustc_session::lint;
-use rustc_span::{DUMMY_SP, Span, sym};
+use rustc_span::{DUMMY_SP, Span, Symbol, sym};
 use rustc_trait_selection::infer::InferCtxtExt;
 use tracing::{debug, instrument};
 
@@ -278,7 +278,7 @@ pub(super) fn is_inside_compartment_unsafe_context(
             hir::Node::Block(block)
                 if matches!(
                     block.rules,
-                    hir::BlockCheckMode::CompartmentUnsafeBlock(_)
+                    hir::BlockCheckMode::CompartmentUnsafeBlock(..)
                 ) =>
             {
                 return true;
@@ -291,6 +291,48 @@ pub(super) fn is_inside_compartment_unsafe_context(
         }
     }
     false
+}
+
+/// Collects all declared `crosscomp(A-B)` pairs from the enclosing lexical scope.
+///
+/// Walks up the HIR parent chain, unioning the pairs of every enclosing
+/// `crosscomp` block. Stops at closures and items, mirroring
+/// [`is_inside_compartment_unsafe_context`]: a closure body does not inherit the
+/// surrounding block's crossings.
+pub(super) fn enclosing_crosscomp_pairs(
+    tcx: TyCtxt<'_>,
+    hir_id: hir::HirId,
+) -> Vec<(Symbol, Symbol)> {
+    let mut pairs = Vec::new();
+    for (_, node) in tcx.hir_parent_iter(hir_id) {
+        match node {
+            hir::Node::Block(block) => {
+                if let hir::BlockCheckMode::CompartmentUnsafeBlock(_, crossings) = block.rules {
+                    pairs.extend(crossings.iter().map(|c| (c.left.name, c.right.name)));
+                }
+            }
+            hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => break,
+            hir::Node::Item(_) => break,
+            _ => {}
+        }
+    }
+    pairs
+}
+
+/// Returns true if `source` may access `target`, accounting for the enclosing
+/// `crosscomp(A-B)` pairs in addition to the function's `trusted` compartments.
+pub(super) fn compartment_access_allowed(
+    tcx: TyCtxt<'_>,
+    hir_id: hir::HirId,
+    source: &CompartmentSet,
+    target: &CompartmentSet,
+    trusted: &CompartmentSet,
+) -> bool {
+    if source.can_access_with_trusted(target, trusted) {
+        return true;
+    }
+    let crossings = enclosing_crosscomp_pairs(tcx, hir_id);
+    !crossings.is_empty() && source.can_access_with_crossings(target, trusted, &crossings)
 }
 
 /// Returns true if `hir_id` lies within the operand expression of a

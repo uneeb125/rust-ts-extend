@@ -1498,9 +1498,24 @@ impl<'a> State<'a> {
         cb: Option<BoxMarker>,
         ib: BoxMarker,
     ) {
-        match blk.rules {
+        match &blk.rules {
             BlockCheckMode::Unsafe(..) => self.word_space("unsafe"),
-            BlockCheckMode::CompartmentUnsafe(..) => self.word_space("crosscomp"),
+            BlockCheckMode::CompartmentUnsafe(_, pairs) => {
+                self.word("crosscomp");
+                if !pairs.is_empty() {
+                    self.word("(");
+                    for (i, pair) in pairs.iter().enumerate() {
+                        if i > 0 {
+                            self.word_space(",");
+                        }
+                        self.print_ident(pair.left);
+                        self.word("-");
+                        self.print_ident(pair.right);
+                    }
+                    self.word(")");
+                }
+                self.space();
+            }
             BlockCheckMode::Default => (),
         }
         self.maybe_print_comment(blk.span.lo());

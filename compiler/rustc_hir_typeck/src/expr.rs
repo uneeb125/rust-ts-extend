@@ -1545,7 +1545,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             );
         }
 
-        if self.tcx.compartments_enabled() && !bypass && !rhs_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&rhs_compartments, &trusted) {
+        if self.tcx.compartments_enabled() && !bypass && !rhs_compartments.tags.is_empty()
+            && !crate::cast::compartment_access_allowed(
+                self.tcx,
+                expr.hir_id,
+                &current_compartments,
+                &rhs_compartments,
+                &trusted,
+            )
+        {
             if let Some(mut err) = crate::compartments::compartment_diag(
                 self.tcx,
                 rhs.span,
@@ -1831,12 +1839,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // If the method is in a trusted compartment, allow the call
                 let method_is_trusted = fn_compartments.tags.iter()
                     .any(|t| trusted.tags.contains(t));
-                // Calling across compartments is permitted inside a `crosscomp`
-                // block; the call itself is the intended crossing point.
-                let call_allowed = crate::cast::is_inside_compartment_unsafe_context(self.tcx, expr.hir_id);
-                if self.tcx.compartments_enabled() && !call_allowed && !rcvr_compartments.tags.is_empty()
+                // Cross-compartment receivers are permitted only when the
+                // enclosing `crosscomp(A-B)` scope bridges both sides.
+                let receiver_allowed = crate::cast::compartment_access_allowed(
+                    self.tcx,
+                    expr.hir_id,
+                    &fn_compartments,
+                    &rcvr_compartments,
+                    &trusted,
+                );
+                if self.tcx.compartments_enabled() && !receiver_allowed && !rcvr_compartments.tags.is_empty()
                     && !method_is_trusted
-                    && !fn_compartments.can_access_with_trusted(&rcvr_compartments, &trusted)
                 {
                     if let Some(mut err) = crate::compartments::compartment_diag(
                         self.tcx,
@@ -1881,8 +1894,16 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 self.tcx.def_path_str(type_def_id), type_compartments.tags);
                         }
 
-                        // Check if the argument's type compartments are allowed by method's compartments (with trusted bypass)
-                        if self.tcx.compartments_enabled() && !arg_bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !fn_compartments.can_access_with_trusted(&type_compartments, &trusted) {
+                        // Check if the argument's type compartments are allowed by
+                        // method's compartments (trust or `crosscomp(A-B)` bridge).
+                        let arg_allowed = crate::cast::compartment_access_allowed(
+                            self.tcx,
+                            arg.hir_id,
+                            &fn_compartments,
+                            &type_compartments,
+                            &trusted,
+                        );
+                        if self.tcx.compartments_enabled() && !arg_bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !arg_allowed {
                             if let Some(mut err) = crate::compartments::compartment_diag(
                                 self.tcx,
                                 arg.span,

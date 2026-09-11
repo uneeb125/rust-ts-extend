@@ -1376,7 +1376,15 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
             let current_def_id = self.typeck_results.borrow().hir_owner.to_def_id();
             let trusted = self.tcx.trusted_compartments(current_def_id).clone();
 
-            if self.tcx.compartments_enabled() && !bypass && !init_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&init_compartments, &trusted) {
+            let init_allowed = crate::cast::compartment_access_allowed(
+                self.tcx,
+                init.hir_id,
+                &current_compartments,
+                &init_compartments,
+                &trusted,
+            );
+
+            if self.tcx.compartments_enabled() && !bypass && !init_compartments.tags.is_empty() && !init_allowed {
                 // [COMPARTMENT_DEBUG] A let-binding initializer is about to be
                 // flagged as a compartment violation. Print the full decision
                 // context so the warning can be traced back to its source.

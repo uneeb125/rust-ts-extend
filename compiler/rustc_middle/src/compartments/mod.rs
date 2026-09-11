@@ -80,4 +80,30 @@ impl CompartmentSet {
         // Access allowed only if there are no untrusted compartments
         untrusted_target_tags.is_empty()
     }
+
+    /// Like [`Self::can_access_with_trusted`], but additionally permits access
+    /// through declared `crosscomp(A-B)` pairs.
+    ///
+    /// A pair `A-B` is bidirectional: a target compartment `t` is accessible
+    /// when `t` is one side of a declared pair whose other side appears in
+    /// `self` (the source side). This lets a scope in compartment `A` reach
+    /// `B` and vice versa, without granting access to unrelated compartments.
+    pub fn can_access_with_crossings(
+        &self,
+        target: &Self,
+        trusted: &Self,
+        crossings: &[(Symbol, Symbol)],
+    ) -> bool {
+        if self.is_sudo() || target.is_sudo() {
+            return true;
+        }
+        target.tags.iter().all(|t| {
+            self.tags.contains(t)
+                || trusted.tags.contains(t)
+                || crossings.iter().any(|(a, b)| {
+                    (a == t || b == t)
+                        && (self.tags.contains(a) || self.tags.contains(b))
+                })
+        })
+    }
 }

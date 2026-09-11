@@ -622,11 +622,18 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
 
             if !skip_compartment_check {
                 let current_compartments = self.root_ctxt.get_current_compartments();
-                // Calling across compartments is permitted inside a `crosscomp`
-                // block; the call itself is the intended crossing point.
-                let call_allowed = crate::cast::is_inside_compartment_unsafe_context(self.tcx, call_expr.hir_id);
+                // Cross-compartment calls are permitted only when the enclosing
+                // `crosscomp(A-B)` scope bridges the caller's and callee's
+                // compartments. A bare `crosscomp { }` grants no such access.
+                let call_allowed = crate::cast::compartment_access_allowed(
+                    self.tcx,
+                    call_expr.hir_id,
+                    &current_compartments,
+                    &fn_compartments,
+                    &trusted,
+                );
 
-                if self.tcx.compartments_enabled() && !call_allowed && !fn_compartments.tags.is_empty() && !current_compartments.can_access_with_trusted(&fn_compartments, &trusted) {
+                if self.tcx.compartments_enabled() && !call_allowed && !fn_compartments.tags.is_empty() {
                     if let Some(mut err) = crate::compartments::compartment_diag(
                         self.tcx,
                         call_expr.span,
@@ -660,10 +667,17 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 for arg in arg_exprs {
                     let arg_compartments = self.find_compartments_in_expr(arg);
                     if !arg_bypass && !arg_compartments.tags.is_empty() && !callee_is_trusted {
-                        let untrusted = arg_compartments.tags.iter()
-                            .filter(|t| !fn_compartments.tags.contains(t) && !trusted.tags.contains(t))
-                            .collect::<Vec<_>>();
-                        if self.tcx.compartments_enabled() && !untrusted.is_empty() {
+                        // The callee must be allowed to consume the argument's
+                        // compartments, either directly, via trust, or through a
+                        // `crosscomp(A-B)` pair bridging the callee and argument.
+                        let arg_allowed = crate::cast::compartment_access_allowed(
+                            self.tcx,
+                            arg.hir_id,
+                            &fn_compartments,
+                            &arg_compartments,
+                            &trusted,
+                        );
+                        if self.tcx.compartments_enabled() && !arg_allowed {
                             let fn_minus_arg = fn_compartments.tags.iter()
                                 .filter(|t| !arg_compartments.tags.contains(t))
                                 .map(|s| s.to_ident_string())

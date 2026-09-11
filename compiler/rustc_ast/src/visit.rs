@@ -385,6 +385,7 @@ macro_rules! common_visitor_and_walkers {
         impl_visitable_list!(<$($lt)? $($mut)?>
             ThinVec<AngleBracketedArg>,
             ThinVec<Attribute>,
+            ThinVec<CompartmentCrossing>,
             ThinVec<(Ident, Option<Ident>)>,
             ThinVec<Ident>,
             ThinVec<(NodeId, Path)>,
@@ -421,6 +422,7 @@ macro_rules! common_visitor_and_walkers {
             BoundPolarity,
             ByRef,
             Closure,
+            CompartmentCrossing,
             Const,
             ConstItem,
             Defaultness,

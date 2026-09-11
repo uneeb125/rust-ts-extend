@@ -114,14 +114,20 @@ impl<'a, 'hir> LoweringContext<'a, 'hir> {
         self.arena.alloc(hir::LetStmt { hir_id, super_, ty, pat, init, els, span, source })
     }
 
-    fn lower_block_check_mode(&mut self, b: &BlockCheckMode) -> hir::BlockCheckMode {
-        match *b {
+    fn lower_block_check_mode(&mut self, b: &BlockCheckMode) -> hir::BlockCheckMode<'hir> {
+        match b {
             BlockCheckMode::Default => hir::BlockCheckMode::DefaultBlock,
             BlockCheckMode::Unsafe(u) => {
-                hir::BlockCheckMode::UnsafeBlock(self.lower_unsafe_source(u))
+                hir::BlockCheckMode::UnsafeBlock(self.lower_unsafe_source(*u))
             }
-            BlockCheckMode::CompartmentUnsafe(u) => {
-                hir::BlockCheckMode::CompartmentUnsafeBlock(self.lower_unsafe_source(u))
+            BlockCheckMode::CompartmentUnsafe(u, pairs) => {
+                let pairs = self.arena.alloc_from_iter(pairs.iter().map(|p| {
+                    hir::CompartmentCrossing { left: p.left, right: p.right }
+                }));
+                hir::BlockCheckMode::CompartmentUnsafeBlock(
+                    self.lower_unsafe_source(*u),
+                    pairs,
+                )
             }
         }
     }

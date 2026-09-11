@@ -129,7 +129,12 @@ impl<'a> Parser<'a> {
                 force_collect,
                 |this, _empty_attrs| {
                     let lo = this.prev_token.span;
-                    let blk = this.parse_expr_block(None, lo, BlockCheckMode::CompartmentUnsafe(ast::UserProvided))?;
+                    let pairs = this.parse_crosscomp_pairs()?;
+                    let blk = this.parse_expr_block(
+                        None,
+                        lo,
+                        BlockCheckMode::CompartmentUnsafe(ast::UserProvided, pairs),
+                    )?;
                     Ok((blk, Trailing::No, UsePreAttrPos::Yes))
                 },
             )?;
@@ -717,7 +722,7 @@ impl<'a> Parser<'a> {
         }
 
         let attrs = self.parse_inner_attributes()?;
-        let tail = match self.maybe_suggest_struct_literal(lo, blk_mode, maybe_ident) {
+        let tail = match self.maybe_suggest_struct_literal(lo, blk_mode.clone(), maybe_ident) {
             Some(tail) => tail?,
             None => self.parse_block_tail(lo, blk_mode, AttemptLocalParseRecovery::Yes)?,
         };
