@@ -269,6 +269,10 @@ pub(super) fn is_inside_unsafe_context(tcx: TyCtxt<'_>, hir_id: hir::HirId) -> b
 
 /// Returns true if the expression is inside a `crosscomp { ... }` block.
 /// Does NOT match regular `unsafe { }` blocks or `unsafe fn` items.
+///
+/// Item bodies nested inside a `crosscomp` block (e.g. a `static` initializer)
+/// are scoping-transparent, so we walk through item boundaries. Closures remain
+/// a barrier.
 pub(super) fn is_inside_compartment_unsafe_context(
     tcx: TyCtxt<'_>,
     hir_id: hir::HirId,
@@ -286,7 +290,6 @@ pub(super) fn is_inside_compartment_unsafe_context(
             hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => {
                 return false;
             }
-            hir::Node::Item(_) => return false,
             _ => continue,
         }
     }
@@ -296,9 +299,9 @@ pub(super) fn is_inside_compartment_unsafe_context(
 /// Collects all declared `crosscomp(A-B)` pairs from the enclosing lexical scope.
 ///
 /// Walks up the HIR parent chain, unioning the pairs of every enclosing
-/// `crosscomp` block. Stops at closures and items, mirroring
-/// [`is_inside_compartment_unsafe_context`]: a closure body does not inherit the
-/// surrounding block's crossings.
+/// `crosscomp` block. Walks through item boundaries so that initializers of
+/// items declared in a `crosscomp` (e.g. a `static`) see the pairs; a closure
+/// body does not inherit them.
 pub(super) fn enclosing_crosscomp_pairs(
     tcx: TyCtxt<'_>,
     hir_id: hir::HirId,
@@ -312,7 +315,6 @@ pub(super) fn enclosing_crosscomp_pairs(
                 }
             }
             hir::Node::Expr(hir::Expr { kind: hir::ExprKind::Closure(_), .. }) => break,
-            hir::Node::Item(_) => break,
             _ => {}
         }
     }
