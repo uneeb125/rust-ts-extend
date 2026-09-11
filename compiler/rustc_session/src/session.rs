@@ -42,8 +42,8 @@ pub use crate::code_stats::{DataTypeKind, FieldInfo, FieldKind, SizeKind, Varian
 use crate::config::{
     self, CoverageLevel, CoverageOptions, CrateType, DebugInfo, ErrorOutputType, FunctionReturn,
     Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, PartitionMap,
-    RemapPathScopeComponents, SwitchWithOptPath, load_global_trusted_file, load_partition_map,
-    CompartmentViolation,
+    RemapPathScopeComponents, SwitchWithOptPath, load_compartment_ignore_file,
+    load_global_trusted_file, load_partition_map, CompartmentViolation,
 };
 use crate::filesearch::FileSearch;
 use crate::lint::LintId;
@@ -152,6 +152,10 @@ pub struct Session {
     pub compartment_partition_map: Option<PartitionMap>,
 
     pub is_root_crate: bool,
+
+    /// True when this crate is named in the `-Z compartment-ignore-file` list and
+    /// should therefore have all compartment checks skipped.
+    pub compartment_crate_ignored: bool,
 
     pub global_trusted: Vec<rustc_span::Symbol>,
 
@@ -706,12 +710,19 @@ impl Session {
         self.opts.unstable_opts.ub_checks.unwrap_or(self.opts.debug_assertions)
     }
 
+    /// Returns true when this crate should have every compartment check skipped,
+    /// either because `-Z compartment-root-only` is set and this is not the root
+    /// crate, or because the crate is listed in `-Z compartment-ignore-file`.
+    pub fn compartment_crate_skipped(&self) -> bool {
+        (self.opts.unstable_opts.compartment_root_only && !self.is_root_crate)
+            || self.compartment_crate_ignored
+    }
+
     pub fn compartment_runtime_checks(&self) -> bool {
-        let enabled = self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false);
-        if self.opts.unstable_opts.compartment_root_only && !self.is_root_crate {
+        if self.compartment_crate_skipped() {
             return false;
         }
-        enabled
+        self.opts.unstable_opts.compartment_runtime_checks.unwrap_or(false)
     }
 
     pub fn compartment_strict(&self) -> bool {
@@ -1137,6 +1148,19 @@ pub fn build_session(
         .unwrap_or_else(|err| dcx.handle().fatal(err))
         .unwrap_or_default();
 
+    let compartment_ignored_crates = sopts
+        .unstable_opts
+        .compartment_ignore_file
+        .as_ref()
+        .map(|path| load_compartment_ignore_file(path))
+        .transpose()
+        .unwrap_or_else(|err| dcx.handle().fatal(err))
+        .unwrap_or_default();
+
+    let compartment_crate_ignored = sopts.crate_name.as_deref().is_some_and(|name| {
+        compartment_ignored_crates.contains(&Symbol::intern(&name.replace('-', "_")))
+    });
+
     let mut psess = ParseSess::with_dcx(dcx, source_map);
     psess.assume_incomplete_release = sopts.unstable_opts.assume_incomplete_release;
 
@@ -1201,6 +1225,7 @@ pub fn build_session(
             host_filesearch,
             invocation_temp,
             is_root_crate: env::var("CARGO_PRIMARY_PACKAGE").as_deref() == Ok("1"),
+            compartment_crate_ignored,
             global_trusted,
     };
 

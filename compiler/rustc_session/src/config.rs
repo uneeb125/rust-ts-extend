@@ -696,6 +696,75 @@ pub fn load_global_trusted_file(path: &Path) -> Result<Vec<Symbol>, String> {
     Ok(trusted)
 }
 
+/// Resolve a path that is shared across every crate in a single build.
+///
+/// Cargo invokes rustc for every crate with the working directory set to the
+/// workspace root, so relative paths resolved against the current directory are
+/// consistent across all crates. `CARGO_MANIFEST_DIR` is per-package and is only
+/// used as a fallback (e.g. when rustc is invoked directly).
+fn resolve_shared_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    let cwd_candidate = env::current_dir().ok().map(|base| base.join(path));
+    if let Some(ref candidate) = cwd_candidate {
+        if candidate.exists() {
+            return candidate.clone();
+        }
+    }
+    if let Some(manifest_dir) = env::var_os("CARGO_MANIFEST_DIR") {
+        let candidate = PathBuf::from(manifest_dir).join(path);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    cwd_candidate.unwrap_or_else(|| path.to_path_buf())
+}
+
+/// Load the set of crate names that should be excluded from compartment checks
+/// from a JSON object of the form `{ "ignore": ["crate_a", "crate_b"] }`.
+///
+/// Crate names are normalized by replacing `-` with `_` so that a package named
+/// `my-crate` matches the crate name `my_crate` that cargo passes to rustc.
+pub fn load_compartment_ignore_file(path: &Path) -> Result<FxHashSet<Symbol>, String> {
+    let resolved = resolve_shared_path(path);
+    let data = std::fs::read_to_string(&resolved).map_err(|e| {
+        format!("cannot read compartment ignore file `{}`: {e}", resolved.display())
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&data).map_err(|e| {
+        format!("cannot parse compartment ignore file `{}`: {e}", resolved.display())
+    })?;
+    let obj = value.as_object().ok_or_else(|| {
+        format!(
+            "compartment ignore file `{}` must contain a JSON object with an `ignore` array",
+            resolved.display()
+        )
+    })?;
+    let ignore = obj.get("ignore").ok_or_else(|| {
+        format!(
+            "compartment ignore file `{}` is missing the `ignore` array",
+            resolved.display()
+        )
+    })?;
+    let arr = ignore.as_array().ok_or_else(|| {
+        format!(
+            "`ignore` in compartment ignore file `{}` must be an array of crate names",
+            resolved.display()
+        )
+    })?;
+    let mut ignored = FxHashSet::default();
+    for v in arr {
+        let s = v.as_str().ok_or_else(|| {
+            format!(
+                "`ignore` in compartment ignore file `{}` must contain only strings, found: {v}",
+                resolved.display()
+            )
+        })?;
+        ignored.insert(Symbol::intern(&s.replace('-', "_")));
+    }
+    Ok(ignored)
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable_Generic)]
 #[derive(Encodable, Decodable)]
 pub enum SymbolManglingVersion {
