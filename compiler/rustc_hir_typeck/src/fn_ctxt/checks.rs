@@ -171,8 +171,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Check if this is a Const item - if so, get parent function's compartments
                     if let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = &callee.kind {
                         if let Some(def_id) = path.res.opt_def_id() {
-                            // Check if this is a Const item (nested inside a function)
-                            if self.tcx.def_kind(def_id) == DefKind::Const {
+                            // Check if this is a Const/Static item (nested inside a function)
+                            if matches!(self.tcx.def_kind(def_id), DefKind::Const | DefKind::Static { .. }) {
                                 let local_def_id = def_id.expect_local();
                                 let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
@@ -220,8 +220,8 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                     // Fallback: get compartments from the method's impl block or the method itself
                     // Check if this is a Const item - if so, get parent function's compartments
                     if let Some(def_id) = segment.res.opt_def_id() {
-                        // Check if this is a Const item (nested inside a function)
-                        if self.tcx.def_kind(def_id) == DefKind::Const {
+                        // Check if this is a Const/Static item (nested inside a function)
+                        if matches!(self.tcx.def_kind(def_id), DefKind::Const | DefKind::Static { .. }) {
                             if let Some(local_def_id) = def_id.as_local() {
                                 let hir_id = self.tcx.local_def_id_to_hir_id(local_def_id);
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
@@ -299,12 +299,12 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 eprintln!("DEBUG: def_kind for {:?}: {:?}", local_id, def_kind);
                             }
 
-                            if matches!(def_kind, DefKind::Const) {
+                            if matches!(def_kind, DefKind::Const | DefKind::Static { .. }) {
                                 // Get compartments from parent function instead of using crate name default
                                 let parent_owner_id = self.tcx.hir_get_parent_item(hir_id);
                                 let parent_def_id = parent_owner_id.to_def_id();
                                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                                    eprintln!("DEBUG: Const item {:?} parent is {:?}", local_id, parent_def_id);
+                                    eprintln!("DEBUG: Const/Static item {:?} parent is {:?}", local_id, parent_def_id);
                                 }
                                 if parent_def_id != local_id.to_def_id() {
                                     let parent_compartments = crate::compartment_set_with_default(self.tcx, parent_def_id);

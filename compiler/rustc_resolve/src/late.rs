@@ -4639,8 +4639,27 @@ impl<'a, 'ast, 'ra, 'tcx> LateResolutionVisitor<'a, 'ast, 'ra, 'tcx> {
         self.with_resolved_label(label, id, |this| this.visit_block(block));
     }
 
+    /// Whether `crosscomp` scoping-transparency is active for this crate.
+    fn crosscomp_scoping_enabled(&self) -> bool {
+        self.r.tcx.sess.opts.unstable_opts.compartments
+            || self.r.tcx.features().compartments()
+    }
+
     fn resolve_block(&mut self, block: &'ast Block) {
         debug!("(resolving block) entering block");
+
+        // `crosscomp` blocks are scoping-transparent: their items and `let`
+        // bindings belong to the enclosing scope, so no block rib is introduced.
+        if self.crosscomp_scoping_enabled()
+            && matches!(block.rules, rustc_ast::BlockCheckMode::CompartmentUnsafe(..))
+        {
+            for stmt in &block.stmts {
+                self.visit_stmt(stmt);
+            }
+            debug!("(resolving block) leaving transparent crosscomp block");
+            return;
+        }
+
         // Move down in the graph, if there's an anonymous module rooted here.
         let orig_module = self.parent_scope.module;
         let anonymous_module = self.r.block_map.get(&block.id).copied();

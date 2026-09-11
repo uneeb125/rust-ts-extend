@@ -60,6 +60,27 @@ fn resolve_block<'tcx>(
 ) {
     debug!("resolve_block(blk.hir_id={:?})", blk.hir_id);
 
+    // `crosscomp` blocks are scoping-transparent: do not create a block scope,
+    // so locals and temporaries behave as if the statements were inlined into
+    // the enclosing scope.
+    if (visitor.tcx.sess.opts.unstable_opts.compartments
+        || visitor.tcx.features().compartments())
+        && matches!(blk.rules, hir::BlockCheckMode::CompartmentUnsafeBlock(..))
+    {
+        for statement in blk.stmts {
+            match statement.kind {
+                hir::StmtKind::Item(..) => {
+                    // Items are not lowered to MIR and need no scope.
+                }
+                _ => visitor.visit_stmt(statement),
+            }
+        }
+        if let Some(tail_expr) = blk.expr {
+            resolve_expr(visitor, tail_expr, terminating);
+        }
+        return;
+    }
+
     let prev_cx = visitor.cx;
 
     // We treat the tail expression in the block (if any) somewhat

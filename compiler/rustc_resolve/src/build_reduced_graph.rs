@@ -323,6 +323,39 @@ impl<'ra, 'tcx> AsMut<Resolver<'ra, 'tcx>> for BuildReducedGraphVisitor<'_, 'ra,
     }
 }
 
+/// Finds item declarations reachable from a block without crossing a normal
+/// block boundary, treating `crosscomp` blocks as scoping-transparent. If any
+/// are found, the enclosing block needs an anonymous module to receive them.
+struct CrosscompItemsFinder {
+    transparent: bool,
+    found: bool,
+}
+
+impl<'ast> Visitor<'ast> for CrosscompItemsFinder {
+    fn visit_item(&mut self, _item: &'ast Item) {
+        // Items nested inside other items are handled when their own block is
+        // visited; do not look through item boundaries.
+    }
+
+    fn visit_block(&mut self, block: &'ast Block) {
+        if self.found || !self.transparent {
+            return;
+        }
+        if matches!(block.rules, ast::BlockCheckMode::CompartmentUnsafe(..)) {
+            if block
+                .stmts
+                .iter()
+                .any(|stmt| matches!(stmt.kind, StmtKind::Item(_) | StmtKind::MacCall(_)))
+            {
+                self.found = true;
+                return;
+            }
+            visit::walk_block(self, block);
+        }
+        // Normal blocks create their own anonymous module, so we stop here.
+    }
+}
+
 impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
     fn res(&self, def_id: impl Into<DefId>) -> Res {
         let def_id = def_id.into();
@@ -457,10 +490,34 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
 
     fn block_needs_anonymous_module(&self, block: &Block) -> bool {
         // If any statements are items, we need to create an anonymous module
-        block
+        if block
             .stmts
             .iter()
             .any(|statement| matches!(statement.kind, StmtKind::Item(_) | StmtKind::MacCall(_)))
+        {
+            return true;
+        }
+
+        // A scoping-transparent `crosscomp` block inside this block hoists its
+        // items into this block, so we need an anonymous module to receive them.
+        if self.crosscomp_scoping_enabled() {
+            let mut finder =
+                CrosscompItemsFinder { transparent: true, found: false };
+            for statement in &block.stmts {
+                finder.visit_stmt(statement);
+                if finder.found {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Whether `crosscomp` scoping-transparency is active for this crate.
+    fn crosscomp_scoping_enabled(&self) -> bool {
+        let tcx = self.r.tcx;
+        tcx.sess.opts.unstable_opts.compartments || tcx.features().compartments()
     }
 
     // Add an import to the current module.
@@ -1042,6 +1099,14 @@ impl<'a, 'ra, 'tcx> BuildReducedGraphVisitor<'a, 'ra, 'tcx> {
     }
 
     fn build_reduced_graph_for_block(&mut self, block: &Block) {
+        // `crosscomp { .. }` is scoping-transparent: its items are defined in the
+        // enclosing module, so do not create an anonymous block module.
+        if self.crosscomp_scoping_enabled()
+            && matches!(block.rules, ast::BlockCheckMode::CompartmentUnsafe(..))
+        {
+            return;
+        }
+
         let parent = self.parent_scope.module;
         let expansion = self.parent_scope.expansion;
         if self.block_needs_anonymous_module(block) {
