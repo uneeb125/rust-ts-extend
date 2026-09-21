@@ -111,6 +111,51 @@ fn compartment_set_with_default(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSe
     }
 }
 
+/// Returns true if `def_id` declares `#[compartments(...)]` explicitly.
+///
+/// Used so an item's own annotation is not overridden by the compartment scope
+/// inherited from its enclosing function.
+fn def_has_explicit_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    if !def_id.is_local() {
+        return false;
+    }
+    let hir_id = tcx.local_def_id_to_hir_id(def_id.expect_local());
+    tcx.hir_attrs(hir_id).iter().any(|attr| {
+        matches!(
+            attr,
+            hir::Attribute::Parsed(hir::attrs::AttributeKind::Compartments(..))
+        )
+    })
+}
+
+/// Resolve the compartment scope of a body nested inside a function.
+///
+/// Named `const`s, anonymous consts (e.g. const-generic arguments) and `static`
+/// initializers are separate HIR bodies that do **not** carry the enclosing
+/// function's `#[compartments(...)]` attribute. Without this walk they fall back
+/// to the crate-name default, which is wrong for generated code such as an
+/// embassy task pool. Walk up the HIR parent chain and inherit from the nearest
+/// item that either has explicit compartments or is the enclosing function body.
+fn nested_body_compartments(tcx: TyCtxt<'_>, def_id: LocalDefId) -> CompartmentSet {
+    let mut owner = tcx.hir_get_parent_item(tcx.local_def_id_to_hir_id(def_id));
+    loop {
+        if owner == rustc_hir::CRATE_OWNER_ID {
+            return compartment_set_with_default(tcx, def_id.to_def_id());
+        }
+        let owner_def_id = owner.to_def_id();
+        if def_has_explicit_compartments(tcx, owner_def_id)
+            || matches!(tcx.def_kind(owner_def_id), DefKind::Fn | DefKind::AssocFn)
+        {
+            return compartment_set_with_default(tcx, owner_def_id);
+        }
+        let next = tcx.hir_get_parent_item(owner.into());
+        if next == owner {
+            return compartment_set_with_default(tcx, def_id.to_def_id());
+        }
+        owner = next;
+    }
+}
+
 fn typeck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> &'tcx ty::TypeckResults<'tcx> {
     typeck_with_inspect(tcx, def_id, None)
 }
@@ -156,18 +201,24 @@ fn typeck_with_inspect<'tcx>(
 
     let param_env = tcx.param_env(def_id);
 
-    // For const items inside functions, get compartments from the enclosing function.
-    // Everything else delegates to the compartment_set query which handles all resolution
-    // (HIR attrs, impl block attrs, self-type inheritance, partition file, crate-name default).
+    // Bodies nested inside a function (named consts, anonymous consts from
+    // const-generic arguments, inline consts and statics) do not inherit the
+    // enclosing function's `#[compartments(...)]` attribute. Derive their scope
+    // from the enclosing item so generated code (e.g. const-generic task-pool
+    // machinery) is checked in the task's compartment instead of falling back to
+    // the crate-name default. Everything else delegates to the `compartment_set`
+    // query which handles all resolution (HIR attrs, impl block attrs, self-type
+    // inheritance, partition file, crate-name default).
     let def_kind = tcx.def_kind(def_id.to_def_id());
-    let compartments = if def_kind == DefKind::Const {
-        let parent_owner_id = tcx.hir_get_parent_item(id);
-        let parent_def_id = parent_owner_id.to_def_id();
-        if parent_def_id != def_id.to_def_id() {
-            compartment_set_with_default(tcx, parent_def_id)
-        } else {
-            compartment_set_with_default(tcx, def_id.to_def_id())
-        }
+    let compartments = if matches!(
+        def_kind,
+        DefKind::Const
+            | DefKind::AnonConst
+            | DefKind::InlineConst
+            | DefKind::Static { .. }
+    ) && !def_has_explicit_compartments(tcx, def_id.to_def_id())
+    {
+        nested_body_compartments(tcx, def_id)
     } else {
         compartment_set_with_default(tcx, def_id.to_def_id())
     };
