@@ -1880,36 +1880,44 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 // `compas comp(...)` cast over the call exempts the argument flow.
                 let arg_bypass = crate::cast::is_compartment_cast_operand(self.tcx, expr.hir_id);
 
-                // Check if argument types' compartments are allowed by method's declared compartments (with trusted bypass)
+                // Check if argument compartments are allowed by the method's declared
+                // compartments (with trusted bypass). Prefer the argument value's recorded
+                // compartments, which a `crosscomp(A-B)` bridge may have rebound into the
+                // current scope; fall back to the argument type's compartments.
                 for arg in args {
                     let arg_ty = self.typeck_results.borrow().expr_ty(arg);
 
-                    // Get compartments from the argument's type
                     if let ty::Adt(adt_def, _) = arg_ty.kind() {
                         let type_def_id = adt_def.did();
                         let type_compartments = crate::compartment_set_with_default(self.tcx, type_def_id);
+                        let value_compartments = self.find_compartments_in_expr(arg);
+                        let arg_compartments = if value_compartments.tags.is_empty() {
+                            type_compartments
+                        } else {
+                            value_compartments
+                        };
 
                         if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                            eprintln!("DEBUG: Argument type {:?} has compartments: {:?}",
-                                self.tcx.def_path_str(type_def_id), type_compartments.tags);
+                            eprintln!("DEBUG: Argument {:?} has compartments: {:?}",
+                                self.tcx.def_path_str(type_def_id), arg_compartments.tags);
                         }
 
-                        // Check if the argument's type compartments are allowed by
+                        // Check if the argument's compartments are allowed by
                         // method's compartments (trust or `crosscomp(A-B)` bridge).
                         let arg_allowed = crate::cast::compartment_access_allowed(
                             self.tcx,
                             arg.hir_id,
                             &fn_compartments,
-                            &type_compartments,
+                            &arg_compartments,
                             &trusted,
                         );
-                        if self.tcx.compartments_enabled() && !arg_bypass && !callee_is_trusted && !type_compartments.tags.is_empty() && !arg_allowed {
+                        if self.tcx.compartments_enabled() && !arg_bypass && !callee_is_trusted && !arg_compartments.tags.is_empty() && !arg_allowed {
                             if let Some(mut err) = crate::compartments::compartment_diag(
                                 self.tcx,
                                 arg.span,
                                 format!(
                                     "arg type has ({}) not allowed by method's comps ({})",
-                                    type_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
+                                    arg_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", "),
                                     fn_compartments.tags.iter().map(|s| s.to_ident_string()).collect::<Vec<_>>().join(", ")
                                 ),
                             ) {

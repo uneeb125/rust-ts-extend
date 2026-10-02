@@ -1431,12 +1431,32 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                 }
             }
 
-            // Propagate compartment from initializer to pattern
-            if !init_compartments.tags.is_empty() {
+            // Propagate the compartment to the pattern.
+            //
+            // Inside a `crosscomp(A-B)` block, a value legitimately brought in across the
+            // bridge is rebound into the enclosing scope's compartment, so later uses in this
+            // scope count as same-compartment access ("bind its result back into the scope").
+            // Values that are not actually permitted (e.g. an unrelated compartment) keep
+            // their own compartment and are diagnosed above.
+            let crossings = crate::cast::enclosing_crosscomp_pairs(self.tcx, decl.hir_id);
+            let rebind_into_scope = !crossings.is_empty()
+                && !current_compartments.tags.is_empty()
+                && !init_compartments.tags.is_empty()
+                && init_allowed;
+            let pattern_compartments = if rebind_into_scope {
+                current_compartments.clone()
+            } else {
+                init_compartments.clone()
+            };
+
+            if !pattern_compartments.tags.is_empty() {
                 if std::env::var("COMPARTMENT_DEBUG").is_ok() {
-                    eprintln!("DEBUG: Recording compartments {:?} on pattern hir_id {:?}", init_compartments.tags, decl.pat.hir_id);
+                    eprintln!(
+                        "DEBUG: Recording compartments {:?} on pattern hir_id {:?} (rebind_into_scope={rebind_into_scope})",
+                        pattern_compartments.tags, decl.pat.hir_id
+                    );
                 }
-                self.record_compartment(decl.pat.hir_id, init_compartments);
+                self.record_compartment(decl.pat.hir_id, pattern_compartments);
             }
             self.overwrite_local_ty_if_err(decl.hir_id, decl.pat, init_ty);
         }
