@@ -58,21 +58,44 @@ fn partition_lookup_key(tcx: TyCtxt<'_>, def_id: DefId) -> String {
 pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
     let base = trusted_compartments_base(tcx, def_id);
 
-    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
-        if tcx.is_automatically_derived(impl_def_id) {
-            if let Some(extra) = derived_trusted_compartments_for_impl(tcx, impl_def_id) {
-                let mut tags = base.tags;
-                for tag in extra.tags {
-                    if !tags.contains(&tag) {
-                        tags.push(tag);
-                    }
+    // Add the additive `#[derived_trusted_compartments(...)]` for `#[automatically_derived]`
+    // impls. We also cover bodies nested inside their methods (closures, anon consts) so that
+    // the trusted set stays consistent with `compartment_set`, which resolves nested bodies via
+    // `nested_body_compartments`.
+    if let Some(impl_def_id) = enclosing_derived_impl(tcx, def_id) {
+        if let Some(extra) = derived_trusted_compartments_for_impl(tcx, impl_def_id) {
+            let mut tags = base.tags;
+            for tag in extra.tags {
+                if !tags.contains(&tag) {
+                    tags.push(tag);
                 }
-                return CompartmentSet::from_iter(tags);
             }
+            return CompartmentSet::from_iter(tags);
         }
     }
 
     base
+}
+
+/// Returns the `#[automatically_derived]` impl that `def_id` belongs to, walking up through
+/// enclosing bodies (closures, anon consts) and the impl method. Returns `None` when `def_id`
+/// is not inside an automatically-derived impl.
+fn enclosing_derived_impl(tcx: TyCtxt<'_>, def_id: DefId) -> Option<DefId> {
+    if !def_id.is_local() {
+        return None;
+    }
+    let mut owner = def_id;
+    loop {
+        if let Some(impl_def_id) = tcx.impl_of_assoc(owner) {
+            return tcx.is_automatically_derived(impl_def_id).then_some(impl_def_id);
+        }
+        let hir_id = tcx.local_def_id_to_hir_id(owner.expect_local());
+        let parent = tcx.hir_get_parent_item(hir_id);
+        if parent == rustc_hir::CRATE_OWNER_ID || parent.to_def_id() == owner {
+            return None;
+        }
+        owner = parent.to_def_id();
+    }
 }
 
 /// Walks up the HIR tree from `def_id` to find `#[trusted_compartments(...)]`:
