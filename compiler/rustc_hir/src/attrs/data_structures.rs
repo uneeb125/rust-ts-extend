@@ -475,6 +475,14 @@ pub enum AttributeKind {
     /// Represents `#[trusted_compartments(...)]`.
     TrustedCompartments(ThinVec<(Symbol, Span)>, Span),
 
+    /// Represents `#[derived_compartments(...)]`, declaring the compartments of the
+    /// `#[automatically_derived]` impls generated for the annotated item.
+    DerivedCompartments(ThinVec<(Symbol, Span)>, Span),
+
+    /// Represents `#[derived_trusted_compartments(...)]`, declaring the trusted compartments
+    /// of the `#[automatically_derived]` impls generated for the annotated item.
+    DerivedTrustedCompartments(ThinVec<(Symbol, Span)>, Span),
+
     /// Represents `#[rustc_confusables]`.
     Confusables {
         symbols: ThinVec<Symbol>,

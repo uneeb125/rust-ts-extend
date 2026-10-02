@@ -105,3 +105,57 @@ impl<S: Stage> CombineAttributeParser<S> for TrustedCompartmentsParser {
             .zip(iter::repeat(cx.attr_span))
     }
 }
+
+/// Parser for `#[derived_compartments(...)]`. Declares the compartments of the
+/// `#[automatically_derived]` impls generated for the annotated item.
+pub(crate) struct DerivedCompartmentsParser;
+impl<S: Stage> CombineAttributeParser<S> for DerivedCompartmentsParser {
+    const PATH: &[Symbol] = &[sym::derived_compartments];
+    type Item = (Symbol, Span);
+    const CONVERT: ConvertFn<Self::Item> =
+        |items, span| AttributeKind::DerivedCompartments(items, span);
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Struct),
+        Allow(Target::Union),
+        Allow(Target::Enum),
+        Allow(Target::Impl { of_trait: false }),
+        Allow(Target::Impl { of_trait: true }),
+    ]);
+    const TEMPLATE: AttributeTemplate = template!(List: &["c1", "c2"]);
+
+    fn extend<'c>(
+        cx: &'c mut AcceptContext<'_, '_, S>,
+        args: &'c ArgParser<'_>,
+    ) -> impl IntoIterator<Item = Self::Item> {
+        parse_unstable(cx, args, <Self as CombineAttributeParser<S>>::PATH[0])
+            .into_iter()
+            .zip(iter::repeat(cx.attr_span))
+    }
+}
+
+/// Parser for `#[derived_trusted_compartments(...)]`. Declares the trusted compartments of the
+/// `#[automatically_derived]` impls generated for the annotated item.
+pub(crate) struct DerivedTrustedCompartmentsParser;
+impl<S: Stage> CombineAttributeParser<S> for DerivedTrustedCompartmentsParser {
+    const PATH: &[Symbol] = &[sym::derived_trusted_compartments];
+    type Item = (Symbol, Span);
+    const CONVERT: ConvertFn<Self::Item> =
+        |items, span| AttributeKind::DerivedTrustedCompartments(items, span);
+    const ALLOWED_TARGETS: AllowedTargets = AllowedTargets::AllowList(&[
+        Allow(Target::Struct),
+        Allow(Target::Union),
+        Allow(Target::Enum),
+        Allow(Target::Impl { of_trait: false }),
+        Allow(Target::Impl { of_trait: true }),
+    ]);
+    const TEMPLATE: AttributeTemplate = template!(List: &["c1", "c2"]);
+
+    fn extend<'c>(
+        cx: &'c mut AcceptContext<'_, '_, S>,
+        args: &'c ArgParser<'_>,
+    ) -> impl IntoIterator<Item = Self::Item> {
+        parse_unstable(cx, args, <Self as CombineAttributeParser<S>>::PATH[0])
+            .into_iter()
+            .zip(iter::repeat(cx.attr_span))
+    }
+}

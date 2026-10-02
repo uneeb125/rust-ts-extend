@@ -41,6 +41,8 @@ impl AttributeKind {
             DebuggerVisualizer(..) => No,
             DenyExplicitImpl(..) => No,
             Deprecation { .. } => Yes,
+            DerivedCompartments(..) => No,
+            DerivedTrustedCompartments(..) => No,
             DoNotImplementViaObject(..) => No,
             DocComment { .. } => Yes,
             Dummy => No,

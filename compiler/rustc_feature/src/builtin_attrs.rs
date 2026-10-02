@@ -874,6 +874,20 @@ pub static BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         "experimental compartment system"
     ),
 
+    // `#[derived_compartments(c1, c2)]` attribute declaring the compartments of auto-derived impls
+    gated!(
+        derived_compartments, Normal, template!(List: &["c1", "c2"]), WarnFollowing,
+        EncodeCrossCrate::No, compartments,
+        "experimental compartment system"
+    ),
+
+    // `#[derived_trusted_compartments(c1, c2)]` declaring trusted compartments of auto-derived impls
+    gated!(
+        derived_trusted_compartments, Normal, template!(List: &["c1", "c2"]), WarnFollowing,
+        EncodeCrossCrate::No, compartments,
+        "experimental compartment system"
+    ),
+
     // `#[coroutine]` attribute to be applied to closures to make them coroutines instead
     gated!(
         coroutine, Normal, template!(Word), ErrorFollowing,

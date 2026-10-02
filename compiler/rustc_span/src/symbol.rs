@@ -208,6 +208,8 @@ symbols! {
         Compartments,
         compartments,
         trusted_compartments,
+        derived_compartments,
+        derived_trusted_compartments,
         compartment_read_tls,
         compartment_set_tls,
         compartment_lookup_tag,

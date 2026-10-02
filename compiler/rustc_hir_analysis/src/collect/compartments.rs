@@ -49,12 +49,37 @@ fn partition_lookup_key(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     format!("{}::{}", crate_name, def_path)
 }
 
-/// Returns the trusted compartments for a given def_id.
-/// This walks up the HIR tree from `def_id` to find `#[trusted_compartments(...)]`:
+/// Returns the trusted compartments for `def_id`.
+///
+/// Wraps [`trusted_compartments_base`] and additionally applies the additive
+/// `#[derived_trusted_compartments(...)]` declaration for `#[automatically_derived]` impls.
+/// The addition happens here (not inside the base walk) so it is never short-circuited by a
+/// `#[trusted_compartments(...)]` found while walking up the tree.
+pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+    let base = trusted_compartments_base(tcx, def_id);
+
+    if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
+        if tcx.is_automatically_derived(impl_def_id) {
+            if let Some(extra) = derived_trusted_compartments_for_impl(tcx, impl_def_id) {
+                let mut tags = base.tags;
+                for tag in extra.tags {
+                    if !tags.contains(&tag) {
+                        tags.push(tag);
+                    }
+                }
+                return CompartmentSet::from_iter(tags);
+            }
+        }
+    }
+
+    base
+}
+
+/// Walks up the HIR tree from `def_id` to find `#[trusted_compartments(...)]`:
 /// 1. First checks the item itself
 /// 2. Then walks up through parent modules
 /// 3. Finally checks crate-level `#![trusted_compartments(...)]`
-pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+fn trusted_compartments_base(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
     let with_global = |local: CompartmentSet| -> CompartmentSet {
         let global = tcx.sess.global_trusted_compartments();
         if global.is_empty() {
@@ -202,7 +227,7 @@ pub(crate) fn trusted_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Compartmen
                                             | rustc_hir::def::DefKind::Enum
                                             | rustc_hir::def::DefKind::Union
                                     ) {
-                                        for tag in trusted_compartments(tcx, adt_def_id).tags {
+                                        for tag in trusted_compartments_base(tcx, adt_def_id).tags {
                                             if !trusted.contains(&tag) {
                                                 trusted.push(tag);
                                             }
@@ -368,6 +393,18 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
                 println!("DEBUG: impl_of_assoc for {:?} -> {:?}, is_automatically_derived={}", tcx.def_path_str(def_id), tcx.def_path_str(impl_def_id), is_derived);
             }
             if is_derived {
+                // An explicit `#[derived_compartments(...)]` overrides the boilerplate default.
+                // Read from the impl first, then from the self type.
+                if let Some(explicit) = derived_compartments_for_impl(tcx, impl_def_id) {
+                    if std::env::var("MY_DEBUG_COLLECT").is_ok() {
+                        println!(
+                            "DEBUG: Using derived_compartments for {:?}: {:?}",
+                            tcx.def_path_str(def_id),
+                            explicit.tags
+                        );
+                    }
+                    return explicit;
+                }
                 if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
                     let crate_name = tcx.crate_name(def_id.krate);
                     let crate_compartment = Symbol::intern(&crate_name.as_str());
@@ -532,4 +569,91 @@ fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
     }
 
     None
+}
+
+/// Returns the ADT `DefId` of the self type of an impl block, if it is a local
+/// struct/enum/union (the same extraction done inline in [`get_self_type_compartments`]).
+fn impl_self_adt_def_id(tcx: TyCtxt<'_>, impl_def_id: DefId) -> Option<DefId> {
+    let local_impl_id = impl_def_id.as_local()?;
+    let impl_hir_id = tcx.local_def_id_to_hir_id(local_impl_id);
+    if let rustc_hir::Node::Item(rustc_hir::Item {
+        kind: rustc_hir::ItemKind::Impl(impl_block),
+        ..
+    }) = tcx.hir_node(impl_hir_id)
+    {
+        if let rustc_hir::TyKind::Path(rustc_hir::QPath::Resolved(_, path)) = impl_block.self_ty.kind {
+            if let rustc_hir::def::Res::Def(def_kind, adt_def_id) = path.res {
+                if matches!(
+                    def_kind,
+                    rustc_hir::def::DefKind::Struct
+                        | rustc_hir::def::DefKind::Enum
+                        | rustc_hir::def::DefKind::Union
+                ) {
+                    return Some(adt_def_id);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Reads `#[derived_compartments(...)]` off a single local def, if present and non-empty.
+fn derived_compartments_attr(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    if !def_id.is_local() {
+        return None;
+    }
+    let hir_id = tcx.local_def_id_to_hir_id(def_id.expect_local());
+    for attr in tcx.hir_attrs(hir_id) {
+        if let rustc_hir::Attribute::Parsed(rustc_hir::attrs::AttributeKind::DerivedCompartments(
+            items,
+            _span,
+        )) = attr
+        {
+            let tags: Vec<_> = items.iter().map(|(symbol, _)| *symbol).collect();
+            if !tags.is_empty() {
+                return Some(CompartmentSet::from_iter(tags));
+            }
+        }
+    }
+    None
+}
+
+/// Reads `#[derived_trusted_compartments(...)]` off a single local def, if present and non-empty.
+fn derived_trusted_compartments_attr(tcx: TyCtxt<'_>, def_id: DefId) -> Option<CompartmentSet> {
+    if !def_id.is_local() {
+        return None;
+    }
+    let hir_id = tcx.local_def_id_to_hir_id(def_id.expect_local());
+    for attr in tcx.hir_attrs(hir_id) {
+        if let rustc_hir::Attribute::Parsed(
+            rustc_hir::attrs::AttributeKind::DerivedTrustedCompartments(items, _span),
+        ) = attr
+        {
+            let tags: Vec<_> = items.iter().map(|(symbol, _)| *symbol).collect();
+            if !tags.is_empty() {
+                return Some(CompartmentSet::from_iter(tags));
+            }
+        }
+    }
+    None
+}
+
+/// Resolves the explicit compartments for an `#[automatically_derived]` impl:
+/// the impl's own `#[derived_compartments(...)]` takes precedence over the self type's.
+fn derived_compartments_for_impl(tcx: TyCtxt<'_>, impl_def_id: DefId) -> Option<CompartmentSet> {
+    derived_compartments_attr(tcx, impl_def_id).or_else(|| {
+        impl_self_adt_def_id(tcx, impl_def_id).and_then(|adt| derived_compartments_attr(tcx, adt))
+    })
+}
+
+/// Resolves the explicit trusted compartments for an `#[automatically_derived]` impl:
+/// the impl's own `#[derived_trusted_compartments(...)]` takes precedence over the self type's.
+fn derived_trusted_compartments_for_impl(
+    tcx: TyCtxt<'_>,
+    impl_def_id: DefId,
+) -> Option<CompartmentSet> {
+    derived_trusted_compartments_attr(tcx, impl_def_id).or_else(|| {
+        impl_self_adt_def_id(tcx, impl_def_id)
+            .and_then(|adt| derived_trusted_compartments_attr(tcx, adt))
+    })
 }

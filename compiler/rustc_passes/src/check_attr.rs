@@ -245,6 +245,8 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
                     | AttributeKind::Confusables { .. }
                     | AttributeKind::Compartments(..)
                     | AttributeKind::TrustedCompartments(..)
+                    | AttributeKind::DerivedCompartments(..)
+                    | AttributeKind::DerivedTrustedCompartments(..)
                     // `#[doc]` is actually a lot more than just doc comments, so is checked below
                     | AttributeKind::DocComment {..}
                     // handled below this loop and elsewhere
