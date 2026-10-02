@@ -49,6 +49,17 @@ fn partition_lookup_key(tcx: TyCtxt<'_>, def_id: DefId) -> String {
     format!("{}::{}", crate_name, def_path)
 }
 
+/// Returns true if `impl_def_id` was produced by a `#[derive(...)]` expansion.
+///
+/// Prefers the explicit `#[automatically_derived]` marker, but also treats impls whose span
+/// originates in a derive expansion as derived. Some derive crates (e.g. clap 3.x) generate
+/// impls without emitting the marker, and we still want `#[derived_compartments(...)]` /
+/// `#[derived_trusted_compartments(...)]` to apply to them.
+fn is_derived_impl(tcx: TyCtxt<'_>, impl_def_id: DefId) -> bool {
+    tcx.is_automatically_derived(impl_def_id)
+        || (impl_def_id.is_local() && tcx.def_span(impl_def_id).in_derive_expansion())
+}
+
 /// Returns the trusted compartments for `def_id`.
 ///
 /// Wraps [`trusted_compartments_base`] and additionally applies the additive
@@ -87,7 +98,7 @@ fn enclosing_derived_impl(tcx: TyCtxt<'_>, def_id: DefId) -> Option<DefId> {
     let mut owner = def_id;
     loop {
         if let Some(impl_def_id) = tcx.impl_of_assoc(owner) {
-            return tcx.is_automatically_derived(impl_def_id).then_some(impl_def_id);
+            return is_derived_impl(tcx, impl_def_id).then_some(impl_def_id);
         }
         let hir_id = tcx.local_def_id_to_hir_id(owner.expect_local());
         let parent = tcx.hir_get_parent_item(hir_id);
@@ -228,7 +239,7 @@ fn trusted_compartments_base(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
             // compartments from self type, plus always trust core/alloc/std since
             // derive macros always call into them for formatting, cloning, etc.
             if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
-                if tcx.is_automatically_derived(impl_def_id) {
+                if is_derived_impl(tcx, impl_def_id) {
                     // Start with stdlib crates that derive macros always need
                     let mut trusted = vec![sym::core, sym::alloc, sym::std];
 
@@ -411,7 +422,7 @@ pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet 
         // Derive-generated code (#[automatically_derived]) is boilerplate, not intentional
         // data flow. Give it the crate-name default so it can call core/alloc/std freely.
         if let Some(impl_def_id) = tcx.impl_of_assoc(def_id) {
-            let is_derived = tcx.is_automatically_derived(impl_def_id);
+            let is_derived = is_derived_impl(tcx, impl_def_id);
             if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                 println!("DEBUG: impl_of_assoc for {:?} -> {:?}, is_automatically_derived={}", tcx.def_path_str(def_id), tcx.def_path_str(impl_def_id), is_derived);
             }
