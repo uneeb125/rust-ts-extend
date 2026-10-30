@@ -583,12 +583,8 @@ pub struct PartitionEntry {
 
 pub type PartitionMap = FxHashMap<String, PartitionEntry>;
 
-/// Name of the compartment policy file looked up next to `Cargo.toml`.
-pub const COMPARTMENT_POLICY_FILE: &str = "trusted.json";
-
-/// Environment variable cargo uses to hand the build's policy file to every
-/// crate, including dependencies.
-pub const COMPARTMENT_POLICY_ENV: &str = "CARGO_COMPARTMENT_FILE";
+/// Name of the compartment policy file looked up next to a crate's `Cargo.toml`.
+pub const COMPARTMENT_POLICY_FILE: &str = "compartment_policy.json";
 
 fn parse_compartment_id(val: &serde_json::Value) -> Option<Symbol> {
     match val {
@@ -750,9 +746,10 @@ fn resolve_explicit_path(path: &Path) -> PathBuf {
 
 /// The full compartment policy in force for one compilation.
 ///
-/// Normally a single `trusted.json` carries every section. The three `-Z`
-/// flags still work and take precedence section by section, so existing
-/// invocations that pass separate files keep behaving exactly as before.
+/// Normally a single `compartment_policy.json` next to the crate's `Cargo.toml`
+/// carries every section. The three `-Z` flags still work and take precedence
+/// section by section, so existing invocations that pass separate files keep
+/// behaving exactly as before.
 #[derive(Clone, Debug, Default)]
 pub struct CompartmentPolicy {
     pub partition_map: PartitionMap,
@@ -788,8 +785,11 @@ impl CompartmentPolicy {
     /// Precedence, per section:
     ///
     /// 1. the explicit `-Z compartment-*` flag,
-    /// 2. the discovered `trusted.json`,
-    /// 3. empty.
+    /// 2. the sections of the file given to `-Z compartment-file`, when it is a
+    ///    sectioned policy file,
+    /// 3. the discovered `compartment_policy.json` (a bare array counts as its
+    ///    `trusted` section),
+    /// 4. empty.
     pub fn load(
         compartment_file: Option<&Path>,
         global_trusted_file: Option<&Path>,
@@ -798,9 +798,10 @@ impl CompartmentPolicy {
         let mut policy = CompartmentPolicy::default();
         let mut hash = FNV_OFFSET;
 
-        let needs_default =
-            compartment_file.is_none() || global_trusted_file.is_none() || ignore_file.is_none();
-        let default = if needs_default { discover_policy_file() } else { None };
+        // Sections that already have a value, so that the discovered file cannot
+        // override them.
+        let mut trusted_set = false;
+        let mut ignore_set = false;
 
         if let Some(path) = compartment_file {
             let resolved = resolve_explicit_path(path);
@@ -813,8 +814,8 @@ impl CompartmentPolicy {
                         resolved.display()
                     )
                 })?;
-                // Accept a sectioned policy file here too, so that pointing
-                // `-Z compartment-file` at `trusted.json` works.
+                // A sectioned policy file may be passed here too, so that
+                // `-Z compartment-file=compartment_policy.json` carries the whole policy.
                 if obj.contains_key("version") || obj.contains_key("compartments") {
                     if let Some(section) = obj.get("compartments") {
                         let section = section.as_object().ok_or_else(|| {
@@ -826,6 +827,14 @@ impl CompartmentPolicy {
                         policy.partition_map = parse_partition_map_value(section, &resolved)?;
                         policy.partition_map_loaded = true;
                     }
+                    if let Some(section) = obj.get("trusted") {
+                        policy.global_trusted = parse_trusted_list(section, &resolved)?;
+                        trusted_set = true;
+                    }
+                    if let Some(section) = obj.get("ignore") {
+                        policy.ignored_crates = parse_ignore_value(section, &resolved)?;
+                        ignore_set = true;
+                    }
                 } else {
                     policy.partition_map = parse_partition_map_value(obj, &resolved)?;
                     policy.partition_map_loaded = true;
@@ -833,12 +842,14 @@ impl CompartmentPolicy {
                 policy.path = Some(resolved);
             }
         }
+
         if let Some(path) = global_trusted_file {
             let resolved = resolve_explicit_path(path);
             if let Some(data) = read_policy_bytes(&resolved, true)? {
                 hash = fnv1a64(&data, hash);
                 policy.global_trusted =
                     parse_trusted_list(&parse_policy_json(&data, &resolved)?, &resolved)?;
+                trusted_set = true;
                 policy.path.get_or_insert(resolved);
             }
         }
@@ -850,45 +861,63 @@ impl CompartmentPolicy {
             hash = fnv1a64(&data, hash);
             policy.ignored_crates =
                 parse_ignore_value(&parse_policy_json(&data, &resolved)?, &resolved)?;
+            ignore_set = true;
             policy.path.get_or_insert(resolved);
         }
 
-        if let Some((path, data)) = default {
-            hash = fnv1a64(&data, hash);
-            let value = parse_policy_json(&data, &path)?;
-            let obj = value.as_object().ok_or_else(|| {
-                format!("compartment policy file `{}` must contain a JSON object", path.display())
-            })?;
+        if compartment_file.is_none() || !trusted_set || !ignore_set {
+            if let Some((path, data)) = discover_policy_file() {
+                hash = fnv1a64(&data, hash);
+                let value = parse_policy_json(&data, &path)?;
 
-            // A file with `version` or `compartments` is the sectioned format.
-            // Anything else is a bare partition map, which is what the original
-            // `-Z compartment-file` accepted.
-            if obj.contains_key("version") || obj.contains_key("compartments") {
-                if let Some(section) = obj.get("compartments") {
-                    let section = section.as_object().ok_or_else(|| {
-                        format!("`compartments` in `{}` must be a JSON object", path.display())
+                // A bare array is the `trusted` section, which is the natural
+                // shape for a file named `compartment_policy.json`.
+                if value.is_array() {
+                    if !trusted_set {
+                        policy.global_trusted = parse_trusted_list(&value, &path)?;
+                    }
+                } else {
+                    let obj = value.as_object().ok_or_else(|| {
+                        format!(
+                            "compartment policy file `{}` must contain a JSON object",
+                            path.display()
+                        )
                     })?;
-                    if compartment_file.is_none() {
-                        policy.partition_map = parse_partition_map_value(section, &path)?;
+
+                    // A file with `version` or `compartments` is the sectioned
+                    // format. Anything else is a bare partition map, which is
+                    // what the original `-Z compartment-file` accepted.
+                    if obj.contains_key("version") || obj.contains_key("compartments") {
+                        if compartment_file.is_none() {
+                            if let Some(section) = obj.get("compartments") {
+                                let section = section.as_object().ok_or_else(|| {
+                                    format!(
+                                        "`compartments` in `{}` must be a JSON object",
+                                        path.display()
+                                    )
+                                })?;
+                                policy.partition_map = parse_partition_map_value(section, &path)?;
+                                policy.partition_map_loaded = true;
+                            }
+                        }
+                        if !trusted_set {
+                            if let Some(section) = obj.get("trusted") {
+                                policy.global_trusted = parse_trusted_list(section, &path)?;
+                            }
+                        }
+                        if !ignore_set {
+                            if let Some(section) = obj.get("ignore") {
+                                policy.ignored_crates = parse_ignore_value(section, &path)?;
+                            }
+                        }
+                    } else if compartment_file.is_none() {
+                        policy.partition_map = parse_partition_map_value(obj, &path)?;
                         policy.partition_map_loaded = true;
                     }
                 }
-                if let Some(section) = obj.get("trusted") {
-                    if global_trusted_file.is_none() {
-                        policy.global_trusted = parse_trusted_list(section, &path)?;
-                    }
-                }
-                if let Some(section) = obj.get("ignore") {
-                    if ignore_file.is_none() {
-                        policy.ignored_crates = parse_ignore_list(section, &path)?;
-                    }
-                }
-            } else if compartment_file.is_none() {
-                policy.partition_map = parse_partition_map_value(obj, &path)?;
-                policy.partition_map_loaded = true;
-            }
 
-            policy.path.get_or_insert(path);
+                policy.path.get_or_insert(path);
+            }
         }
 
         policy.fingerprint = hash;
@@ -896,24 +925,16 @@ impl CompartmentPolicy {
     }
 }
 
-/// Find the policy file cargo would use for this compilation.
+/// Find the policy file of the crate being compiled.
 ///
-/// Cargo hands the build-wide policy over in `CARGO_COMPARTMENT_FILE`, which
-/// also reaches dependencies. Without it, only the primary package may
-/// contribute policy: `trusted.json` next to its `Cargo.toml`, or `./trusted.json`
-/// when rustc is invoked directly. A dependency shipping its own `trusted.json`
-/// must never be able to grant itself trust.
+/// Every crate carries its own policy, the same way it carries its own
+/// `Cargo.toml`: the file sits next to that crate's manifest and applies only to
+/// that crate. Cargo compiles each crate in its own package directory with
+/// `CARGO_MANIFEST_DIR` set, so this works for workspace members and registry
+/// dependencies alike, with no flags and no environment variables beyond the
+/// ones cargo already sets. When rustc is invoked directly the current
+/// directory is used.
 fn discover_policy_file() -> Option<(PathBuf, Vec<u8>)> {
-    if let Some(path) = env::var_os(COMPARTMENT_POLICY_ENV) {
-        let path = PathBuf::from(path);
-        let data = fs::read(&path).ok()?;
-        return Some((path, data));
-    }
-
-    if env::var_os("CARGO").is_some() && env::var("CARGO_PRIMARY_PACKAGE").as_deref() != Ok("1") {
-        return None;
-    }
-
     let dir =
         env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from).or_else(|| env::current_dir().ok())?;
     let candidate = dir.join(COMPARTMENT_POLICY_FILE);
