@@ -6,6 +6,7 @@ use rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 use rustc_data_structures::packed::Pu128;
 use rustc_hir::lang_items::LangItem;
 use rustc_lint_defs::builtin::TAIL_CALL_TRACK_CALLER;
+use rustc_middle::compartments::compartment_set_for;
 use rustc_middle::mir::{self, AssertKind, InlineAsmMacro, SwitchTargets, UnwindTerminateReason};
 use rustc_middle::ty::layout::{HasTyCtxt, LayoutOf, ValidityRequirement};
 use rustc_middle::ty::print::{with_no_trimmed_paths, with_no_visible_paths};
@@ -1216,7 +1217,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         // compares with the caller's compile-time constant. Branches to abort on mismatch.
         if let Some(meta) = vtable_meta {
             if bx.cx().sess().compartment_runtime_checks() {
-                let caller_set = bx.tcx().compartment_set(self.instance.def_id());
+                let caller_set = compartment_set_for(bx.tcx(), self.instance.def_id());
                 if !caller_set.is_empty() {
                     let caller_id = rustc_middle::ty::vtable::encode_compartment_set(&caller_set);
 

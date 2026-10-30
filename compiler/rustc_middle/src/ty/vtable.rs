@@ -4,7 +4,7 @@ use rustc_ast::Mutability;
 use rustc_macros::HashStable;
 use rustc_type_ir::elaborate;
 
-use crate::compartments::CompartmentSet;
+use crate::compartments::{CompartmentSet, compartment_set_for};
 use crate::mir::interpret::{
     AllocId, AllocInit, Allocation, CTFE_ALLOC_SALT, Pointer, Scalar, alloc_range,
 };
@@ -156,7 +156,7 @@ pub(super) fn vtable_allocation_provider<'tcx>(
             for (i, entry) in vtable_entries.iter().enumerate() {
                 let id = match entry {
                     VtblEntry::Method(instance) => {
-                        let set = tcx.compartment_set(instance.def_id());
+                        let set = compartment_set_for(tcx, instance.def_id());
                         encode_compartment_set(&set)
                     }
                     _ => 0u32, // non-method entries (header, Vacant, TraitVPtr) → 0

@@ -2289,6 +2289,8 @@ options! {
          checks for (default: none)"),
     compartment_global_trusted_file: Option<PathBuf> = (None, parse_opt_pathbuf, [TRACKED],
         "load globally trusted compartment names from a JSON file (default: none)"),
+    compartment_policy_hash: Option<u64> = (None, parse_opt_number, [TRACKED],
+        "internal: content hash of the compartment policy file in force (default: none)"),
     contract_checks: Option<bool> = (None, parse_opt_bool, [TRACKED],
         "emit runtime checks for contract pre- and post-conditions (default: no)"),
     coverage_options: CoverageOptions = (CoverageOptions::default(), parse_coverage_options, [TRACKED],

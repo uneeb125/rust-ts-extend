@@ -1,5 +1,8 @@
+use rustc_hir::def_id::DefId;
 use rustc_macros::{HashStable, TyDecodable, TyEncodable, TypeFoldable, TypeVisitable};
 use rustc_span::{Symbol,sym};
+
+use crate::ty::TyCtxt;
 
 #[derive(
     Clone,
@@ -105,5 +108,33 @@ impl CompartmentSet {
                         && (self.tags.contains(a) || self.tags.contains(b))
                 })
         })
+    }
+}
+
+/// Resolve the compartment set of any definition, including one defined in
+/// another crate.
+///
+/// The `compartment_set` query answers `Some(_)` when the defining crate
+/// recorded compartment metadata for the item. It answers `None` when the
+/// dependency was built without compartment metadata: either it predates the
+/// metadata table, or it was compiled without `-Z compartments`.
+///
+/// The `None` case keeps the historical approximation so that builds mixing
+/// compartment-checked and unchecked crates keep working. A crate compiled with
+/// the crate-name default is treated as belonging to the compartment named after
+/// it, which is what `#[trusted_compartments(core, alloc, std)]` relies on.
+/// Everything else falls back to `[Default]`.
+pub fn compartment_set_for(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+    match tcx.compartment_set(def_id) {
+        Some(set) => set.clone(),
+        None => {
+            if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
+                CompartmentSet::from_iter([tcx.crate_name(def_id.krate)])
+            } else if tcx.compartments_enabled() {
+                CompartmentSet::default()
+            } else {
+                CompartmentSet::empty()
+            }
+        }
     }
 }

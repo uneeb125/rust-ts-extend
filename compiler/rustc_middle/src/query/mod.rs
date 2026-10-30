@@ -1550,9 +1550,10 @@ rustc_queries! {
         desc { |tcx| "computing target features for inline asm of `{}`", tcx.def_path_str(def_id) }
     }
 
-    query compartment_set(def_id: DefId) -> &'tcx crate::compartments::CompartmentSet {
+    query compartment_set(def_id: DefId) -> Option<&'tcx crate::compartments::CompartmentSet> {
         arena_cache
         desc { |tcx| "computing compartment set for `{:?}`", def_id }
+        separate_provide_extern
     }
 
     query trusted_compartments(def_id: DefId) -> &'tcx crate::compartments::CompartmentSet {

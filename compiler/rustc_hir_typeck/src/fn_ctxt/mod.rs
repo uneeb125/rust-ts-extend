@@ -17,7 +17,7 @@ use rustc_hir_analysis::hir_ty_lowering::{
 };
 use rustc_infer::infer::{self, RegionVariableOrigin};
 use rustc_infer::traits::{DynCompatibilityViolation, Obligation};
-use rustc_middle::compartments::CompartmentSet;
+use rustc_middle::compartments::{CompartmentSet, compartment_set_for};
 use rustc_middle::ty::{self, Const, Ty, TyCtxt, TypeVisitableExt};
 use rustc_session::Session;
 use rustc_span::{self, DUMMY_SP, ErrorGuaranteed, Ident, Span, sym};
@@ -194,7 +194,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
     #[allow(dead_code)]
     pub(crate) fn current_compartment(&self) -> CompartmentSet {
         let owner = self.body_id.to_def_id();
-        self.tcx.compartment_set(owner).clone()
+        compartment_set_for(self.tcx, owner)
     }
  
     // Central enforcement logic
@@ -206,7 +206,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
         kind: &str,
     ) -> CompartmentSet {
         let current = self.current_compartment();
-        let target = self.tcx.compartment_set(target_def).clone();
+        let target = compartment_set_for(self.tcx, target_def);
         
         // Get trusted compartments for the current context
         let current_def_id = self.body_id.to_def_id();

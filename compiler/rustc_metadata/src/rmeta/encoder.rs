@@ -975,6 +975,44 @@ fn should_encode_attrs(def_kind: DefKind) -> bool {
     }
 }
 
+fn should_encode_compartment_set(def_kind: DefKind) -> bool {
+    // Only kinds that another crate can ask `compartment_set` about. Fields and
+    // closures never leave the defining crate.
+    match def_kind {
+        DefKind::Mod
+        | DefKind::Struct
+        | DefKind::Union
+        | DefKind::Enum
+        | DefKind::Variant
+        | DefKind::Trait
+        | DefKind::TyAlias
+        | DefKind::ForeignTy
+        | DefKind::TraitAlias
+        | DefKind::AssocTy
+        | DefKind::Fn
+        | DefKind::Const
+        | DefKind::Static { .. }
+        | DefKind::AssocFn
+        | DefKind::AssocConst
+        | DefKind::Macro(_)
+        | DefKind::Impl { .. } => true,
+        DefKind::Field
+        | DefKind::Closure
+        | DefKind::SyntheticCoroutineBody
+        | DefKind::Ctor(..)
+        | DefKind::TyParam
+        | DefKind::ConstParam
+        | DefKind::ExternCrate
+        | DefKind::Use
+        | DefKind::ForeignMod
+        | DefKind::AnonConst
+        | DefKind::InlineConst
+        | DefKind::OpaqueTy
+        | DefKind::LifetimeParam
+        | DefKind::GlobalAsm => false,
+    }
+}
+
 fn should_encode_expn_that_defined(def_kind: DefKind) -> bool {
     match def_kind {
         DefKind::Mod
@@ -1479,6 +1517,11 @@ impl<'a, 'tcx> EncodeContext<'a, 'tcx> {
             }
             if should_encode_fn_sig(def_kind) {
                 record!(self.tables.fn_sig[def_id] <- tcx.fn_sig(def_id));
+            }
+            if tcx.compartments_enabled() && should_encode_compartment_set(def_kind) {
+                if let Some(set) = tcx.compartment_set(def_id) {
+                    record!(self.tables.compartment_set[def_id] <- set);
+                }
             }
             if should_encode_generics(def_kind) {
                 let g = tcx.generics_of(def_id);

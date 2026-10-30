@@ -583,67 +583,55 @@ pub struct PartitionEntry {
 
 pub type PartitionMap = FxHashMap<String, PartitionEntry>;
 
-pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
-    let resolved = if path.is_relative() {
-        env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .map(|base| base.join(path))
-            .unwrap_or_else(|| path.to_path_buf())
-    } else {
-        path.to_path_buf()
-    };
-    let data = match std::fs::read_to_string(&resolved) {
-        Ok(d) => d,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(PartitionMap::default()),
-        Err(e) => return Err(format!("cannot read compartment partition file `{}`: {e}", resolved.display())),
-    };
-    let value: serde_json::Value = serde_json::from_str(&data)
-        .map_err(|e| format!("cannot parse compartment partition file `{}`: {e}", resolved.display()))?;
-    let obj = value.as_object().ok_or_else(|| {
-        format!(
-            "compartment partition file `{}` must contain a JSON object",
-            resolved.display()
-        )
-    })?;
+/// Name of the compartment policy file looked up next to `Cargo.toml`.
+pub const COMPARTMENT_POLICY_FILE: &str = "trusted.json";
 
-    fn parse_compartment_id(val: &serde_json::Value) -> Option<Symbol> {
-        match val {
-            serde_json::Value::String(s) => Some(Symbol::intern(s)),
-            serde_json::Value::Number(n) => n.as_u64().map(|id| Symbol::intern(&id.to_string())),
-            _ => None,
-        }
+/// Environment variable cargo uses to hand the build's policy file to every
+/// crate, including dependencies.
+pub const COMPARTMENT_POLICY_ENV: &str = "CARGO_COMPARTMENT_FILE";
+
+fn parse_compartment_id(val: &serde_json::Value) -> Option<Symbol> {
+    match val {
+        serde_json::Value::String(s) => Some(Symbol::intern(s)),
+        serde_json::Value::Number(n) => n.as_u64().map(|id| Symbol::intern(&id.to_string())),
+        _ => None,
     }
+}
 
-    fn parse_compartment_ids(val: &serde_json::Value) -> Result<Vec<Symbol>, String> {
-        match val {
-            serde_json::Value::Array(arr) => arr
-                .iter()
-                .map(|v| {
-                    parse_compartment_id(v)
-                        .ok_or_else(|| format!("invalid compartment ID in array: {v}"))
-                })
-                .collect(),
-            _ => parse_compartment_id(val)
-                .map(|s| vec![s])
-                .ok_or_else(|| format!("expected string, number, or array of strings/numbers, got: {val}")),
-        }
+fn parse_compartment_ids(val: &serde_json::Value) -> Result<Vec<Symbol>, String> {
+    match val {
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .map(|v| {
+                parse_compartment_id(v)
+                    .ok_or_else(|| format!("invalid compartment ID in array: {v}"))
+            })
+            .collect(),
+        _ => parse_compartment_id(val).map(|s| vec![s]).ok_or_else(|| {
+            format!("expected string, number, or array of strings/numbers, got: {val}")
+        }),
     }
+}
 
+/// Parse the `{ "path::to::fn": entry }` object shared by the legacy partition
+/// file and the `compartments` section of a policy file.
+fn parse_partition_map_value(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    path: &Path,
+) -> Result<PartitionMap, String> {
     let mut map = PartitionMap::default();
     for (name, val) in obj {
         let entry = match val {
-            serde_json::Value::Number(_) | serde_json::Value::String(_) | serde_json::Value::Array(_) => {
-                PartitionEntry {
-                    compartments: parse_compartment_ids(val)?,
-                    trusted: vec![],
-                }
+            serde_json::Value::Number(_)
+            | serde_json::Value::String(_)
+            | serde_json::Value::Array(_) => {
+                PartitionEntry { compartments: parse_compartment_ids(val)?, trusted: vec![] }
             }
             serde_json::Value::Object(o) => {
                 let comp_val = o.get("compartment").ok_or_else(|| {
                     format!(
                         "missing `compartment` field in partition file `{}` for `{name}`",
-                        resolved.display()
+                        path.display()
                     )
                 })?;
                 let compartments = parse_compartment_ids(comp_val)?;
@@ -655,9 +643,9 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
             }
             _ => {
                 return Err(format!(
-                     "invalid value type in partition file `{}` for `{name}`: \
-                      expected string, number, array, or object",
-                     resolved.display()
+                    "invalid value type in partition file `{}` for `{name}`: \
+                     expected string, number, array, or object",
+                    path.display()
                 ));
             }
         };
@@ -666,42 +654,70 @@ pub fn load_partition_map(path: &Path) -> Result<PartitionMap, String> {
     Ok(map)
 }
 
-pub fn load_global_trusted_file(path: &Path) -> Result<Vec<Symbol>, String> {
-    let resolved = if path.is_relative() {
-        env::var("CARGO_MANIFEST_DIR")
-            .ok()
-            .map(PathBuf::from)
-            .map(|base| base.join(path))
-            .unwrap_or_else(|| path.to_path_buf())
-    } else {
-        path.to_path_buf()
-    };
-    let data = match std::fs::read_to_string(&resolved) {
-        Ok(d) => d,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("cannot read global trusted file `{}`: {e}", resolved.display())),
-    };
-    let value: serde_json::Value = serde_json::from_str(&data)
-        .map_err(|e| format!("cannot parse global trusted file `{}`: {e}", resolved.display()))?;
-    let arr = value.as_array().ok_or_else(|| {
-        format!("global trusted file `{}` must contain a JSON array of strings", resolved.display())
+fn parse_trusted_list(val: &serde_json::Value, path: &Path) -> Result<Vec<Symbol>, String> {
+    let arr = val.as_array().ok_or_else(|| {
+        format!("`trusted` in `{}` must be a JSON array of strings", path.display())
     })?;
-    let mut trusted = Vec::new();
+    arr.iter()
+        .map(|v| {
+            v.as_str().map(Symbol::intern).ok_or_else(|| {
+                format!("`trusted` in `{}` must contain only strings, found: {v}", path.display())
+            })
+        })
+        .collect()
+}
+
+fn parse_ignore_list(val: &serde_json::Value, path: &Path) -> Result<FxHashSet<Symbol>, String> {
+    let arr = val.as_array().ok_or_else(|| {
+        format!("`ignore` in `{}` must be a JSON array of crate names", path.display())
+    })?;
+    let mut ignored = FxHashSet::default();
     for v in arr {
         let s = v.as_str().ok_or_else(|| {
-            format!("global trusted file `{}` must contain only strings, found: {v}", resolved.display())
+            format!("`ignore` in `{}` must contain only strings, found: {v}", path.display())
         })?;
-        trusted.push(Symbol::intern(s));
+        ignored.insert(Symbol::intern(&s.replace('-', "_")));
     }
-    Ok(trusted)
+    Ok(ignored)
+}
+
+fn read_policy_bytes(path: &Path, missing_is_empty: bool) -> Result<Option<Vec<u8>>, String> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && missing_is_empty => Ok(None),
+        Err(e) => Err(format!("cannot read compartment policy file `{}`: {e}", path.display())),
+    }
+}
+
+fn parse_policy_json(data: &[u8], path: &Path) -> Result<serde_json::Value, String> {
+    serde_json::from_slice(data)
+        .map_err(|e| format!("cannot parse compartment policy file `{}`: {e}", path.display()))
+}
+
+fn parse_ignore_value(value: &serde_json::Value, path: &Path) -> Result<FxHashSet<Symbol>, String> {
+    match value {
+        serde_json::Value::Array(_) => parse_ignore_list(value, path),
+        serde_json::Value::Object(obj) => {
+            let ignore = obj.get("ignore").ok_or_else(|| {
+                format!(
+                    "compartment ignore file `{}` is missing the `ignore` array",
+                    path.display()
+                )
+            })?;
+            parse_ignore_list(ignore, path)
+        }
+        _ => Err(format!(
+            "compartment ignore file `{}` must contain a JSON object with an `ignore` array",
+            path.display()
+        )),
+    }
 }
 
 /// Resolve a path that is shared across every crate in a single build.
 ///
-/// Cargo invokes rustc for every crate with the working directory set to the
-/// workspace root, so relative paths resolved against the current directory are
-/// consistent across all crates. `CARGO_MANIFEST_DIR` is per-package and is only
-/// used as a fallback (e.g. when rustc is invoked directly).
+/// Cargo compiles each crate with its package root as the working directory, so
+/// relative paths are per-package. `CARGO_MANIFEST_DIR` is only used as a
+/// fallback (e.g. when rustc is invoked directly).
 fn resolve_shared_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
@@ -721,48 +737,188 @@ fn resolve_shared_path(path: &Path) -> PathBuf {
     cwd_candidate.unwrap_or_else(|| path.to_path_buf())
 }
 
-/// Load the set of crate names that should be excluded from compartment checks
-/// from a JSON object of the form `{ "ignore": ["crate_a", "crate_b"] }`.
-///
-/// Crate names are normalized by replacing `-` with `_` so that a package named
-/// `my-crate` matches the crate name `my_crate` that cargo passes to rustc.
-pub fn load_compartment_ignore_file(path: &Path) -> Result<FxHashSet<Symbol>, String> {
-    let resolved = resolve_shared_path(path);
-    let data = std::fs::read_to_string(&resolved).map_err(|e| {
-        format!("cannot read compartment ignore file `{}`: {e}", resolved.display())
-    })?;
-    let value: serde_json::Value = serde_json::from_str(&data).map_err(|e| {
-        format!("cannot parse compartment ignore file `{}`: {e}", resolved.display())
-    })?;
-    let obj = value.as_object().ok_or_else(|| {
-        format!(
-            "compartment ignore file `{}` must contain a JSON object with an `ignore` array",
-            resolved.display()
-        )
-    })?;
-    let ignore = obj.get("ignore").ok_or_else(|| {
-        format!(
-            "compartment ignore file `{}` is missing the `ignore` array",
-            resolved.display()
-        )
-    })?;
-    let arr = ignore.as_array().ok_or_else(|| {
-        format!(
-            "`ignore` in compartment ignore file `{}` must be an array of crate names",
-            resolved.display()
-        )
-    })?;
-    let mut ignored = FxHashSet::default();
-    for v in arr {
-        let s = v.as_str().ok_or_else(|| {
-            format!(
-                "`ignore` in compartment ignore file `{}` must contain only strings, found: {v}",
-                resolved.display()
-            )
-        })?;
-        ignored.insert(Symbol::intern(&s.replace('-', "_")));
+fn resolve_explicit_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::var_os("CARGO_MANIFEST_DIR")
+            .map(PathBuf::from)
+            .map(|base| base.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
     }
-    Ok(ignored)
+}
+
+/// The full compartment policy in force for one compilation.
+///
+/// Normally a single `trusted.json` carries every section. The three `-Z`
+/// flags still work and take precedence section by section, so existing
+/// invocations that pass separate files keep behaving exactly as before.
+#[derive(Clone, Debug, Default)]
+pub struct CompartmentPolicy {
+    pub partition_map: PartitionMap,
+    /// True when a partition map was actually configured, either by
+    /// `-Z compartment-file` or by a policy file carrying a `compartments`
+    /// section. Distinguishes "no policy" from "empty policy", which matters
+    /// for `-Z compartment-missing=error`.
+    pub partition_map_loaded: bool,
+    pub global_trusted: Vec<Symbol>,
+    pub ignored_crates: FxHashSet<Symbol>,
+    /// The policy file that contributed the defaults, if any.
+    pub path: Option<PathBuf>,
+    /// Hash of every byte read. Tracked so that editing the policy invalidates
+    /// incremental caches.
+    pub fingerprint: u64,
+}
+
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn fnv1a64(bytes: &[u8], seed: u64) -> u64 {
+    let mut h = seed;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    h
+}
+
+impl CompartmentPolicy {
+    /// Resolve the policy for this compilation.
+    ///
+    /// Precedence, per section:
+    ///
+    /// 1. the explicit `-Z compartment-*` flag,
+    /// 2. the discovered `trusted.json`,
+    /// 3. empty.
+    pub fn load(
+        compartment_file: Option<&Path>,
+        global_trusted_file: Option<&Path>,
+        ignore_file: Option<&Path>,
+    ) -> Result<Self, String> {
+        let mut policy = CompartmentPolicy::default();
+        let mut hash = FNV_OFFSET;
+
+        let needs_default =
+            compartment_file.is_none() || global_trusted_file.is_none() || ignore_file.is_none();
+        let default = if needs_default { discover_policy_file() } else { None };
+
+        if let Some(path) = compartment_file {
+            let resolved = resolve_explicit_path(path);
+            if let Some(data) = read_policy_bytes(&resolved, true)? {
+                hash = fnv1a64(&data, hash);
+                let value = parse_policy_json(&data, &resolved)?;
+                let obj = value.as_object().ok_or_else(|| {
+                    format!(
+                        "compartment partition file `{}` must contain a JSON object",
+                        resolved.display()
+                    )
+                })?;
+                // Accept a sectioned policy file here too, so that pointing
+                // `-Z compartment-file` at `trusted.json` works.
+                if obj.contains_key("version") || obj.contains_key("compartments") {
+                    if let Some(section) = obj.get("compartments") {
+                        let section = section.as_object().ok_or_else(|| {
+                            format!(
+                                "`compartments` in `{}` must be a JSON object",
+                                resolved.display()
+                            )
+                        })?;
+                        policy.partition_map = parse_partition_map_value(section, &resolved)?;
+                        policy.partition_map_loaded = true;
+                    }
+                } else {
+                    policy.partition_map = parse_partition_map_value(obj, &resolved)?;
+                    policy.partition_map_loaded = true;
+                }
+                policy.path = Some(resolved);
+            }
+        }
+        if let Some(path) = global_trusted_file {
+            let resolved = resolve_explicit_path(path);
+            if let Some(data) = read_policy_bytes(&resolved, true)? {
+                hash = fnv1a64(&data, hash);
+                policy.global_trusted =
+                    parse_trusted_list(&parse_policy_json(&data, &resolved)?, &resolved)?;
+                policy.path.get_or_insert(resolved);
+            }
+        }
+        if let Some(path) = ignore_file {
+            let resolved = resolve_shared_path(path);
+            let data = fs::read(&resolved).map_err(|e| {
+                format!("cannot read compartment ignore file `{}`: {e}", resolved.display())
+            })?;
+            hash = fnv1a64(&data, hash);
+            policy.ignored_crates =
+                parse_ignore_value(&parse_policy_json(&data, &resolved)?, &resolved)?;
+            policy.path.get_or_insert(resolved);
+        }
+
+        if let Some((path, data)) = default {
+            hash = fnv1a64(&data, hash);
+            let value = parse_policy_json(&data, &path)?;
+            let obj = value.as_object().ok_or_else(|| {
+                format!("compartment policy file `{}` must contain a JSON object", path.display())
+            })?;
+
+            // A file with `version` or `compartments` is the sectioned format.
+            // Anything else is a bare partition map, which is what the original
+            // `-Z compartment-file` accepted.
+            if obj.contains_key("version") || obj.contains_key("compartments") {
+                if let Some(section) = obj.get("compartments") {
+                    let section = section.as_object().ok_or_else(|| {
+                        format!("`compartments` in `{}` must be a JSON object", path.display())
+                    })?;
+                    if compartment_file.is_none() {
+                        policy.partition_map = parse_partition_map_value(section, &path)?;
+                        policy.partition_map_loaded = true;
+                    }
+                }
+                if let Some(section) = obj.get("trusted") {
+                    if global_trusted_file.is_none() {
+                        policy.global_trusted = parse_trusted_list(section, &path)?;
+                    }
+                }
+                if let Some(section) = obj.get("ignore") {
+                    if ignore_file.is_none() {
+                        policy.ignored_crates = parse_ignore_list(section, &path)?;
+                    }
+                }
+            } else if compartment_file.is_none() {
+                policy.partition_map = parse_partition_map_value(obj, &path)?;
+                policy.partition_map_loaded = true;
+            }
+
+            policy.path.get_or_insert(path);
+        }
+
+        policy.fingerprint = hash;
+        Ok(policy)
+    }
+}
+
+/// Find the policy file cargo would use for this compilation.
+///
+/// Cargo hands the build-wide policy over in `CARGO_COMPARTMENT_FILE`, which
+/// also reaches dependencies. Without it, only the primary package may
+/// contribute policy: `trusted.json` next to its `Cargo.toml`, or `./trusted.json`
+/// when rustc is invoked directly. A dependency shipping its own `trusted.json`
+/// must never be able to grant itself trust.
+fn discover_policy_file() -> Option<(PathBuf, Vec<u8>)> {
+    if let Some(path) = env::var_os(COMPARTMENT_POLICY_ENV) {
+        let path = PathBuf::from(path);
+        let data = fs::read(&path).ok()?;
+        return Some((path, data));
+    }
+
+    if env::var_os("CARGO").is_some() && env::var("CARGO_PRIMARY_PACKAGE").as_deref() != Ok("1") {
+        return None;
+    }
+
+    let dir =
+        env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from).or_else(|| env::current_dir().ok())?;
+    let candidate = dir.join(COMPARTMENT_POLICY_FILE);
+    let data = fs::read(&candidate).ok()?;
+    Some((candidate, data))
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable_Generic)]

@@ -233,6 +233,14 @@ provide! { tcx, def_id, other, cdata,
     type_alias_is_lazy => { table_direct }
     variances_of => { table }
     fn_sig => { table }
+    compartment_set => {
+        cdata
+            .root
+            .tables
+            .compartment_set
+            .get(cdata, def_id.index)
+            .map(|lazy| lazy.decode((cdata, tcx)))
+    }
     codegen_fn_attrs => { table }
     impl_trait_header => { table }
     const_param_default => { table }

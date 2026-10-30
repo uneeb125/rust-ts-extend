@@ -1,6 +1,6 @@
 use rustc_hir::def_id::DefId;
 use rustc_index::IndexVec;
-use rustc_middle::compartments::CompartmentSet;
+use rustc_middle::compartments::{CompartmentSet, compartment_set_for};
 use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::mir::*;
 use rustc_middle::ty::{self, Ty, TyCtxt};
@@ -33,7 +33,7 @@ impl<'tcx> crate::MirPass<'tcx> for CheckCompartmentCalls {
         }
 
         let def_id = body.source.def_id();
-        let caller_set = tcx.compartment_set(def_id);
+        let caller_set = compartment_set_for(tcx, def_id);
 
         if caller_set.is_empty() || caller_set.is_sudo() {
             return;
@@ -338,7 +338,7 @@ fn insert_fnptr_creation_checks<'tcx>(
 
             let Some(callee_def_id) = callee_def_id else { continue };
 
-            let callee_set = tcx.compartment_set(callee_def_id);
+            let callee_set = compartment_set_for(tcx, callee_def_id);
             if callee_set.is_empty() || callee_set.is_sudo() {
                 continue;
             }
@@ -348,7 +348,7 @@ fn insert_fnptr_creation_checks<'tcx>(
                 continue;
             }
 
-            let caller_id = rustc_middle::ty::vtable::encode_compartment_set(caller_set);
+            let caller_id = rustc_middle::ty::vtable::encode_compartment_set(&caller_set);
             if caller_id == callee_id {
                 continue;
             }

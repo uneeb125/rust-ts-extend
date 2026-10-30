@@ -40,10 +40,9 @@ use rustc_target::spec::{
 use crate::code_stats::CodeStats;
 pub use crate::code_stats::{DataTypeKind, FieldInfo, FieldKind, SizeKind, VariantInfo};
 use crate::config::{
-    self, CoverageLevel, CoverageOptions, CrateType, DebugInfo, ErrorOutputType, FunctionReturn,
-    Input, InstrumentCoverage, OptLevel, OutFileName, OutputType, PartitionMap,
-    RemapPathScopeComponents, SwitchWithOptPath, load_compartment_ignore_file,
-    load_global_trusted_file, load_partition_map, CompartmentViolation,
+    self, CompartmentPolicy, CompartmentViolation, CoverageLevel, CoverageOptions, CrateType,
+    DebugInfo, ErrorOutputType, FunctionReturn, Input, InstrumentCoverage, OptLevel, OutFileName,
+    OutputType, PartitionMap, RemapPathScopeComponents, SwitchWithOptPath,
 };
 use crate::filesearch::FileSearch;
 use crate::lint::LintId;
@@ -1064,7 +1063,7 @@ fn default_emitter(
 #[allow(rustc::bad_opt_access)]
 #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
 pub fn build_session(
-    sopts: config::Options,
+    mut sopts: config::Options,
     io: CompilerIO,
     fluent_bundle: Option<Arc<rustc_errors::FluentBundle>>,
     registry: rustc_errors::registry::Registry,
@@ -1131,38 +1130,35 @@ pub fn build_session(
         None
     };
 
-    let compartment_partition_map = sopts
-        .unstable_opts
-        .compartment_file
-        .as_ref()
-        .map(|path| load_partition_map(path))
-        .transpose()
-        .unwrap_or_else(|err| dcx.handle().fatal(err));
+    let compartment_policy = CompartmentPolicy::load(
+        sopts.unstable_opts.compartment_file.as_deref(),
+        sopts.unstable_opts.compartment_global_trusted_file.as_deref(),
+        sopts.unstable_opts.compartment_ignore_file.as_deref(),
+    )
+    .unwrap_or_else(|err| dcx.handle().fatal(err));
 
-    let global_trusted = sopts
-        .unstable_opts
-        .compartment_global_trusted_file
-        .as_ref()
-        .map(|path| load_global_trusted_file(path))
-        .transpose()
-        .unwrap_or_else(|err| dcx.handle().fatal(err))
-        .unwrap_or_default();
+    // The policy file is an input to the compilation: record it so that
+    // `--emit=dep-info` makes cargo rebuild when it changes, and fold its
+    // contents into the tracked options so incremental caches are dropped too.
+    let mut policy_depinfo_path: Option<Symbol> = None;
+    if let Some(path) = &compartment_policy.path {
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.clone());
+        sopts.unstable_opts.compartment_policy_hash.get_or_insert(compartment_policy.fingerprint);
+        policy_depinfo_path = Some(Symbol::intern(&absolute.display().to_string()));
+    }
 
-    let compartment_ignored_crates = sopts
-        .unstable_opts
-        .compartment_ignore_file
-        .as_ref()
-        .map(|path| load_compartment_ignore_file(path))
-        .transpose()
-        .unwrap_or_else(|err| dcx.handle().fatal(err))
-        .unwrap_or_default();
-
+    let compartment_partition_map =
+        compartment_policy.partition_map_loaded.then_some(compartment_policy.partition_map.clone());
+    let global_trusted = compartment_policy.global_trusted.clone();
     let compartment_crate_ignored = sopts.crate_name.as_deref().is_some_and(|name| {
-        compartment_ignored_crates.contains(&Symbol::intern(&name.replace('-', "_")))
+        compartment_policy.ignored_crates.contains(&Symbol::intern(&name.replace('-', "_")))
     });
 
     let mut psess = ParseSess::with_dcx(dcx, source_map);
     psess.assume_incomplete_release = sopts.unstable_opts.assume_incomplete_release;
+    if let Some(path) = policy_depinfo_path {
+        psess.file_depinfo.borrow_mut().insert(path);
+    }
 
     let host_triple = config::host_tuple();
     let target_triple = sopts.target_triple.tuple();
@@ -1220,13 +1216,13 @@ pub fn build_session(
         unstable_target_features: Default::default(),
         cfg_version,
         using_internal_features,
-            compartment_partition_map,
-            target_filesearch,
-            host_filesearch,
-            invocation_temp,
-            is_root_crate: env::var("CARGO_PRIMARY_PACKAGE").as_deref() == Ok("1"),
-            compartment_crate_ignored,
-            global_trusted,
+        compartment_partition_map,
+        target_filesearch,
+        host_filesearch,
+        invocation_temp,
+        is_root_crate: env::var("CARGO_PRIMARY_PACKAGE").as_deref() == Ok("1"),
+        compartment_crate_ignored,
+        global_trusted,
     };
 
     validate_commandline_args_with_session_available(&sess);

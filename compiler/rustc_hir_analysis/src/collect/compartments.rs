@@ -1,5 +1,5 @@
 use rustc_hir::def_id::DefId;
-use rustc_middle::compartments::CompartmentSet;
+use rustc_middle::compartments::{CompartmentSet, compartment_set_for};
 use rustc_middle::ty::TyCtxt;
 use rustc_session::config::CompartmentMissing;
 use rustc_span::{Symbol, sym};
@@ -377,15 +377,29 @@ fn get_partition_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
     }
 }
 
-pub(crate) fn compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
-    if !def_id.is_local() {
-        return CompartmentSet::empty();
-    }
-
+/// Query provider for the defining crate.
+///
+/// Returns `None` when the item has no compartment metadata at all, which only
+/// happens when the whole crate was compiled with compartment checks skipped.
+/// Consumers use [`rustc_middle::compartments::compartment_set_for`], which
+/// falls back to a crate-name default in that case.
+pub(crate) fn compartment_set(
+    tcx: TyCtxt<'_>,
+    local_def_id: rustc_hir::def_id::LocalDefId,
+) -> Option<CompartmentSet> {
+    let def_id = local_def_id.to_def_id();
     if std::env::var("MY_DEBUG_COLLECT").is_ok() {
         println!("DEBUG: Collecting compartments for {:?}", tcx.def_path_str(def_id));
     }
 
+    if tcx.sess.compartment_crate_skipped() {
+        return None;
+    }
+
+    Some(resolve_compartment_set(tcx, def_id))
+}
+
+fn resolve_compartment_set(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
     let mut raw_tags = Vec::new();
 
     // Get the HIR attributes directly since get_attrs might not index builtin attributes
@@ -548,7 +562,7 @@ fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
                             println!("DEBUG: Found ADT def_id = {:?}", tcx.def_path_str(adt_def_id));
                         }
                         // Recursively get compartments for the self type
-                        let adt_compartments = compartment_set(tcx, adt_def_id);
+                        let adt_compartments = compartment_set_for(tcx, adt_def_id);
                         if std::env::var("MY_DEBUG_COLLECT").is_ok() {
                             println!("DEBUG: ADT compartments = {:?}", adt_compartments.tags);
                         }
@@ -590,7 +604,7 @@ fn get_self_type_compartments(tcx: TyCtxt<'_>, def_id: DefId) -> Option<Compartm
                 | rustc_hir::def::DefKind::Struct
                 | rustc_hir::def::DefKind::Union
         ) {
-            let adt_compartments = compartment_set(tcx, parent_item.to_def_id());
+            let adt_compartments = compartment_set_for(tcx, parent_item.to_def_id());
             if !adt_compartments.tags.is_empty() {
                 let crate_name = tcx.crate_name(def_id.krate);
                 let is_crate_default = adt_compartments.tags.len() == 1

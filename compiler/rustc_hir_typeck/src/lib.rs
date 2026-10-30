@@ -91,24 +91,14 @@ fn used_trait_imports(tcx: TyCtxt<'_>, def_id: LocalDefId) -> &UnordSet<LocalDef
     &tcx.typeck(def_id).used_trait_imports
 }
 
-/// Get compartments for any def_id, with crate-name default for non-local functions.
-/// The `compartment_set` query returns empty for non-local (to avoid query reentrancy),
-/// so callers during typeck need this wrapper to get the correct compartment.
-fn compartment_set_with_default(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
-    let cs = tcx.compartment_set(def_id);
-    if cs.tags.is_empty() {
-        if tcx.features().compartments() || tcx.sess.compartment_crate_default() {
-            let crate_name = tcx.crate_name(def_id.krate);
-            let crate_compartment = rustc_span::Symbol::intern(&crate_name.as_str());
-            CompartmentSet { tags: vec![crate_compartment] }
-        } else if tcx.compartments_enabled() {
-            CompartmentSet::default()
-        } else {
-            CompartmentSet::empty()
-        }
-    } else {
-        cs.clone()
-    }
+/// Get compartments for any def_id, falling back to the crate-name default for
+/// crates that were compiled without compartment metadata.
+///
+/// The `compartment_set` query answers `None` in that case; the fallback itself
+/// lives in `rustc_middle::compartments::compartment_set_for` so that codegen
+/// and MIR agree with type checking.
+pub(crate) fn compartment_set_with_default(tcx: TyCtxt<'_>, def_id: DefId) -> CompartmentSet {
+    rustc_middle::compartments::compartment_set_for(tcx, def_id)
 }
 
 /// Returns true if `def_id` declares `#[compartments(...)]` explicitly.
